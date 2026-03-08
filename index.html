@@ -1,0 +1,1921 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>知识星球助手 - 管理后台</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+        }
+        
+        .header h1 {
+            font-size: 36px;
+            margin-bottom: 10px;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
+        
+        .header p {
+            font-size: 16px;
+            opacity: 0.9;
+        }
+        
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+        
+        .tab {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: 500;
+            transition: all 0.3s;
+            backdrop-filter: blur(10px);
+        }
+        
+        .tab:hover {
+            background: rgba(255,255,255,0.3);
+            transform: translateY(-2px);
+        }
+        
+        .tab.active {
+            background: white;
+            color: #667eea;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+        
+        .content {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            min-height: 500px;
+        }
+        
+        .page {
+            display: none;
+        }
+        
+        .page.active {
+            display: block;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 25px;
+            border-radius: 12px;
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 48px;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+        
+        .stat-label {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+        
+        .form-control {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        
+        .form-control:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-danger {
+            background: #e74c3c;
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background: #c0392b;
+        }
+        
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .badge-success { background: #d4edda; color: #155724; }
+        .badge-warning { background: #fff3cd; color: #856404; }
+        .badge-danger { background: #f8d7da; color: #721c24; }
+        
+        .alert {
+            padding: 16px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+        
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .alert-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .alert-info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        
+        .alert h4 {
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+        
+        .info-table {
+            width: 100%;
+            margin-top: 10px;
+            border-collapse: collapse;
+        }
+        
+        .info-table td {
+            padding: 8px;
+            border-bottom: 1px solid rgba(0,0,0,0.1);
+        }
+        
+        .info-table td:first-child {
+            font-weight: 500;
+            width: 120px;
+            color: #666;
+        }
+        
+        .info-table tr:last-child td {
+            border-bottom: none;
+        }
+        
+        .form-section {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .form-section h3 {
+            margin-bottom: 10px;
+            color: #667eea;
+        }
+        
+        .feature-list {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        
+        .feature-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 20px;
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            transition: all 0.3s;
+        }
+        
+        .feature-item:hover {
+            border-color: #667eea;
+            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.1);
+        }
+        
+        .feature-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .feature-icon {
+            font-size: 24px;
+        }
+        
+        .feature-name {
+            font-weight: 600;
+            font-size: 15px;
+            color: #333;
+            margin-bottom: 4px;
+        }
+        
+        .feature-desc {
+            font-size: 13px;
+            color: #666;
+        }
+        
+        /* 开关样式 */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 26px;
+        }
+        
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 26px;
+        }
+        
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        
+        input:checked + .slider {
+            background-color: #667eea;
+        }
+        
+        input:checked + .slider:before {
+            transform: translateX(24px);
+        }
+        
+        .license-display {
+            font-size: 24px;
+            font-family: 'Courier New', monospace;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            margin: 15px 0;
+            text-align: center;
+            word-break: break-all;
+        }
+        
+        .actions {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        
+        .search-box {
+            flex: 1;
+            min-width: 200px;
+        }
+        
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+        
+        .pagination {
+            display: flex;
+            gap: 5px;
+            justify-content: center;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .pagination button {
+            padding: 8px 12px;
+            border: 1px solid #dee2e6;
+            background: white;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        
+        .pagination button:hover:not(:disabled) {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+        
+        .pagination button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .pagination button.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+        
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+            
+            .header {
+                margin-bottom: 20px;
+            }
+            
+            .header h1 { 
+                font-size: 24px;
+                margin-bottom: 5px;
+            }
+            
+            .header p {
+                font-size: 14px;
+            }
+            
+            .tabs {
+                gap: 8px;
+                margin-bottom: 20px;
+            }
+            
+            .tab {
+                padding: 10px 16px;
+                font-size: 13px;
+                flex: 1 1 auto;
+                min-width: calc(50% - 4px);
+                text-align: center;
+            }
+            
+            .content { 
+                padding: 15px;
+                border-radius: 12px;
+            }
+            
+            .stats-grid { 
+                grid-template-columns: 1fr;
+                gap: 15px;
+            }
+            
+            .stat-card {
+                padding: 20px;
+            }
+            
+            .stat-value {
+                font-size: 36px;
+            }
+            
+            .form-group {
+                margin-bottom: 15px;
+            }
+            
+            .form-control {
+                padding: 10px 12px;
+                font-size: 16px; /* 防止iOS自动缩放 */
+            }
+            
+            .btn {
+                padding: 10px 20px;
+                font-size: 14px;
+                width: 100%;
+                margin-bottom: 10px;
+            }
+            
+            .actions {
+                flex-direction: column;
+                gap: 10px;
+            }
+            
+            .actions .form-control,
+            .actions .btn {
+                width: 100%;
+            }
+            
+            /* 表格横向滚动 */
+            table {
+                display: block;
+                overflow-x: auto;
+                white-space: nowrap;
+                -webkit-overflow-scrolling: touch;
+            }
+            
+            th, td {
+                padding: 8px;
+                font-size: 12px;
+            }
+            
+            /* 功能列表 */
+            .feature-item {
+                padding: 12px 15px;
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+            }
+            
+            .feature-info {
+                width: 100%;
+            }
+            
+            .feature-name {
+                font-size: 14px;
+            }
+            
+            .feature-desc {
+                font-size: 12px;
+            }
+            
+            /* 表单部分 */
+            .form-section {
+                padding: 15px;
+            }
+            
+            .form-section h3 {
+                font-size: 16px;
+            }
+            
+            /* 下载设置 */
+            .download-settings {
+                flex-direction: column;
+                gap: 10px;
+            }
+            
+            .setting-item {
+                width: 100%;
+                justify-content: space-between;
+            }
+            
+            /* 导出设置 */
+            .export-settings {
+                flex-direction: column;
+                gap: 10px;
+            }
+            
+            .export-settings select,
+            .export-settings .form-control {
+                width: 100%;
+            }
+            
+            /* 分页 */
+            .pagination {
+                flex-wrap: wrap;
+                gap: 5px;
+            }
+            
+            .pagination button {
+                padding: 6px 10px;
+                font-size: 12px;
+                min-width: 40px;
+            }
+            
+            /* 搜索框 */
+            .search-box {
+                width: 100%;
+                margin-bottom: 10px;
+            }
+            
+            /* 信息表格 */
+            .info-table td:first-child {
+                width: 80px;
+                font-size: 12px;
+            }
+            
+            .info-table td {
+                font-size: 12px;
+                padding: 6px;
+            }
+            
+            /* 警告框 */
+            .alert {
+                padding: 12px;
+                font-size: 13px;
+            }
+            
+            .alert h4 {
+                font-size: 14px;
+            }
+            
+            /* 代码块 */
+            code {
+                font-size: 11px;
+                word-break: break-all;
+            }
+            
+            /* 徽章 */
+            .badge {
+                font-size: 11px;
+                padding: 3px 8px;
+            }
+            
+            /* 生成密钥结果 */
+            .license-display {
+                font-size: 14px;
+                padding: 15px;
+                word-break: break-all;
+            }
+            
+            /* 按钮组 */
+            .btn-secondary {
+                margin-bottom: 10px;
+            }
+        }
+        
+        /* 超小屏幕 */
+        @media (max-width: 480px) {
+            .header h1 {
+                font-size: 20px;
+            }
+            
+            .tab {
+                font-size: 12px;
+                padding: 8px 12px;
+            }
+            
+            .content {
+                padding: 12px;
+            }
+            
+            .stat-value {
+                font-size: 28px;
+            }
+            
+            .stat-label {
+                font-size: 12px;
+            }
+            
+            th, td {
+                padding: 6px;
+                font-size: 11px;
+            }
+            
+            .btn {
+                font-size: 13px;
+                padding: 8px 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎛️ 知识星球助手 - 管理后台</h1>
+            <p>简洁高效的密钥管理系统</p>
+        </div>
+
+        <div class="tabs">
+            <button class="tab active" onclick="showTab('dashboard')">📊 仪表盘</button>
+            <button class="tab" onclick="showTab('generate')">➕ 生成密钥</button>
+            <button class="tab" onclick="showTab('licenses')">🔑 密钥列表</button>
+            <button class="tab" onclick="showTab('trial')">🎁 试用设备</button>
+            <button class="tab" onclick="showTab('logs')">📋 操作日志</button>
+            <button class="tab" onclick="showTab('features')">⚙️ 功能管理</button>
+            <button class="tab" onclick="showTab('test')">🧪 测试工具</button>
+        </div>
+
+        <div class="content">
+            <!-- 仪表盘 -->
+            <div id="page-dashboard" class="page active">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value" id="totalLicenses">0</div>
+                        <div class="stat-label">总密钥数</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="activeLicenses">0</div>
+                        <div class="stat-label">有效密钥</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="boundDevices">0</div>
+                        <div class="stat-label">已绑定设备</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="trialDevices">0</div>
+                        <div class="stat-label">试用设备</div>
+                    </div>
+                </div>
+                <button class="btn btn-primary" onclick="loadDashboard()">🔄 刷新数据</button>
+            </div>
+
+            <!-- 生成密钥 -->
+            <div id="page-generate" class="page">
+                <h2 style="margin-bottom: 20px;">🎫 批量生成密钥</h2>
+                <div class="form-group">
+                    <label>生成数量</label>
+                    <input type="number" id="licenseCount" class="form-control" value="10" min="1" max="1000" placeholder="输入生成数量（最多1000个）">
+                </div>
+                <div class="form-group">
+                    <label>有效期（天）</label>
+                    <select id="expireDays" class="form-control">
+                        <option value="0">永久</option>
+                        <option value="30">30天（1个月）</option>
+                        <option value="90">90天（3个月）</option>
+                        <option value="180">180天（半年）</option>
+                        <option value="365" selected>365天（1年）</option>
+                        <option value="730">730天（2年）</option>
+                        <option value="1825">1825天（5年）</option>
+                    </select>
+                </div>
+                <button class="btn btn-primary" onclick="batchGenerateLicenses()">🎲 批量生成</button>
+                
+                <div id="generatedResult" class="alert alert-success" style="display:none;">
+                    <strong>✅ 成功生成 <span id="generatedCount"></span> 个密钥！</strong>
+                    <p><strong>有效期：</strong><span id="generatedDays"></span></p>
+                    <p><strong>说明：</strong><span id="generatedExpire"></span></p>
+                    <div style="margin-top: 15px;">
+                        <button class="btn btn-primary" onclick="exportLicenses('txt')">📄 导出为 TXT</button>
+                        <button class="btn btn-primary" onclick="exportLicenses('csv')">📊 导出为 CSV</button>
+                        <button class="btn btn-primary" onclick="copyAllLicenses()">📋 复制全部</button>
+                    </div>
+                    <div style="margin-top: 15px; max-height: 300px; overflow-y: auto; background: #f8f9fa; padding: 15px; border-radius: 8px; font-family: monospace; font-size: 12px;" id="licensesList"></div>
+                </div>
+            </div>
+
+            <!-- 密钥列表 -->
+            <div id="page-licenses" class="page">
+                <div class="actions">
+                    <input type="text" id="searchLicense" class="form-control search-box" placeholder="搜索密钥..." onkeyup="searchTable('licensesTable')">
+                    <select id="filterStatus" class="form-control" style="width: 150px;" onchange="filterLicenses()">
+                        <option value="all">全部状态</option>
+                        <option value="unused">未使用</option>
+                        <option value="activated">已激活</option>
+                        <option value="expired">已过期</option>
+                    </select>
+                    <select id="filterDays" class="form-control" style="width: 150px;" onchange="filterLicenses()">
+                        <option value="all">全部期限</option>
+                        <option value="0">永久</option>
+                        <option value="30">30天</option>
+                        <option value="90">90天</option>
+                        <option value="180">180天</option>
+                        <option value="365">365天</option>
+                        <option value="730">730天</option>
+                        <option value="1825">1825天</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="loadLicenses()">🔄 刷新</button>
+                    <button class="btn btn-primary" onclick="exportAllLicenses('csv')">📊 导出CSV</button>
+                    <button class="btn btn-primary" onclick="exportAllLicenses('txt')">📄 导出TXT</button>
+                </div>
+                <div id="licensesTable"></div>
+            </div>
+
+            <!-- 试用设备 -->
+            <div id="page-trial" class="page">
+                <div class="actions">
+                    <button class="btn btn-primary" onclick="loadTrialDevices()">🔄 刷新</button>
+                </div>
+                <div id="trialTable"></div>
+            </div>
+
+            <!-- 操作日志 -->
+            <div id="page-logs" class="page">
+                <div class="actions">
+                    <select id="filterLogAction" class="form-control" style="width: 150px;" onchange="loadLogs()">
+                        <option value="all">全部操作</option>
+                        <option value="activate">密钥激活</option>
+                        <option value="trial_activate">试用激活</option>
+                        <option value="trial_task">试用任务</option>
+                        <option value="reset_trial_tasks">重置试用</option>
+                        <option value="delete_trial_device">删除设备</option>
+                        <option value="batch_generate">批量生成</option>
+                        <option value="delete">删除密钥</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="loadLogs()">🔄 刷新</button>
+                </div>
+                <div id="logsTable"></div>
+            </div>
+
+            <!-- 功能管理 -->
+            <div id="page-features" class="page">
+                <h2 style="margin-bottom: 20px;">⚙️ 功能管理</h2>
+                <p style="color: #666; margin-bottom: 30px;">控制插件中哪些功能可用，禁用的功能将在插件中隐藏</p>
+                
+                <div class="form-section">
+                    <h3 style="margin-bottom: 20px;">插件功能开关</h3>
+                    
+                    <div class="feature-list">
+                        <div class="feature-item">
+                            <div class="feature-info">
+                                <span class="feature-icon">📤</span>
+                                <div>
+                                    <div class="feature-name">帖子导出</div>
+                                    <div class="feature-desc">导出指定日期范围内的帖子内容</div>
+                                </div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="feature-export" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="feature-item">
+                            <div class="feature-info">
+                                <span class="feature-icon">📥</span>
+                                <div>
+                                    <div class="feature-name">文件下载</div>
+                                    <div class="feature-desc">按日期范围下载各类文件</div>
+                                </div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="feature-download" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="feature-item">
+                            <div class="feature-info">
+                                <span class="feature-icon">🚀</span>
+                                <div>
+                                    <div class="feature-name">极速下载</div>
+                                    <div class="feature-desc">使用官方API极速下载文件</div>
+                                </div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="feature-turboDownload" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="feature-item">
+                            <div class="feature-info">
+                                <span class="feature-icon">🔍</span>
+                                <div>
+                                    <div class="feature-name">关键词搜索</div>
+                                    <div class="feature-desc">搜索并导出包含关键词的帖子</div>
+                                </div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="feature-search" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="feature-item">
+                            <div class="feature-info">
+                                <span class="feature-icon">📋</span>
+                                <div>
+                                    <div class="feature-name">导出搜索框</div>
+                                    <div class="feature-desc">导出知识星球搜索结果页面</div>
+                                </div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="feature-searchResult" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="feature-item">
+                            <div class="feature-info">
+                                <span class="feature-icon">📚</span>
+                                <div>
+                                    <div class="feature-name">专栏导出</div>
+                                    <div class="feature-desc">导出星球专栏内容</div>
+                                </div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="feature-column" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="feature-item">
+                            <div class="feature-info">
+                                <span class="feature-icon">⭐</span>
+                                <div>
+                                    <div class="feature-name">精华导出</div>
+                                    <div class="feature-desc">导出星球精华内容</div>
+                                </div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="feature-digest" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="feature-item">
+                            <div class="feature-info">
+                                <span class="feature-icon">📦</span>
+                                <div>
+                                    <div class="feature-name">全量备份</div>
+                                    <div class="feature-desc">备份整个星球的所有内容</div>
+                                </div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="feature-backup" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 30px; display: flex; gap: 10px;">
+                        <button class="btn btn-primary" onclick="saveFeatureConfig()">💾 保存配置</button>
+                        <button class="btn btn-secondary" onclick="loadFeatureConfig()">🔄 刷新</button>
+                        <button class="btn btn-secondary" onclick="enableAllFeatures()">✅ 全部启用</button>
+                        <button class="btn btn-secondary" onclick="disableAllFeatures()">❌ 全部禁用</button>
+                    </div>
+
+                    <div id="featureConfigResult" style="margin-top: 15px;"></div>
+                </div>
+            </div>
+
+            <!-- 测试工具 -->
+            <div id="page-test" class="page">
+                <h2 style="margin-bottom: 20px;">🧪 测试工具</h2>
+                
+                <!-- 测试激活 -->
+                <div class="form-section">
+                    <h3>1️⃣ 测试密钥激活</h3>
+                    <p style="color: #666; margin-bottom: 15px;">测试密钥是否可以激活，验证设备ID和IP绑定</p>
+                    <div class="form-group">
+                        <label>密钥</label>
+                        <input type="text" id="testLicense" class="form-control" placeholder="输入要测试的密钥">
+                    </div>
+                    <div class="form-group">
+                        <label>设备ID</label>
+                        <input type="text" id="testDeviceId" class="form-control" placeholder="输入设备ID（留空则自动生成）">
+                    </div>
+                    <button class="btn btn-primary" onclick="testActivate()">🔍 测试激活</button>
+                    <div id="testActivateResult" style="margin-top: 15px;"></div>
+                </div>
+
+                <div style="height: 30px; border-bottom: 1px solid #e5e7eb; margin: 30px 0;"></div>
+
+                <!-- 测试任务权限 -->
+                <div class="form-section">
+                    <h3>2️⃣ 测试任务权限</h3>
+                    <p style="color: #666; margin-bottom: 15px;">测试设备是否有权限执行任务（会扣除试用次数）</p>
+                    <div class="form-group">
+                        <label>设备ID</label>
+                        <input type="text" id="testTaskDeviceId" class="form-control" placeholder="输入设备ID">
+                    </div>
+                    <button class="btn btn-primary" onclick="testTaskPermission()">🔍 测试权限</button>
+                    <div id="testTaskResult" style="margin-top: 15px;"></div>
+                </div>
+
+                <div style="height: 30px; border-bottom: 1px solid #e5e7eb; margin: 30px 0;"></div>
+
+                <!-- 测试试用功能 -->
+                <div class="form-section">
+                    <h3>3️⃣ 测试试用功能</h3>
+                    <p style="color: #666; margin-bottom: 15px;">测试试用密钥激活和IP检测</p>
+                    <div class="form-group">
+                        <label>设备ID</label>
+                        <input type="text" id="testTrialDeviceId" class="form-control" placeholder="输入设备ID（留空则自动生成）">
+                    </div>
+                    <button class="btn btn-primary" onclick="testTrial()">🔍 测试试用</button>
+                    <div id="testTrialResult" style="margin-top: 15px;"></div>
+                </div>
+
+                <div style="height: 30px; border-bottom: 1px solid #e5e7eb; margin: 30px 0;"></div>
+
+                <!-- 查询密钥信息 -->
+                <div class="form-section">
+                    <h3>4️⃣ 查询密钥详情</h3>
+                    <p style="color: #666; margin-bottom: 15px;">查看密钥的详细信息（不会修改数据）</p>
+                    <div class="form-group">
+                        <label>密钥</label>
+                        <input type="text" id="queryLicense" class="form-control" placeholder="输入要查询的密钥">
+                    </div>
+                    <button class="btn btn-primary" onclick="queryLicenseInfo()">🔍 查询</button>
+                    <div id="queryLicenseResult" style="margin-top: 15px;"></div>
+                </div>
+
+                <div style="height: 30px; border-bottom: 1px solid #e5e7eb; margin: 30px 0;"></div>
+
+                <!-- 测试密钥过期后试用 -->
+                <div class="form-section">
+                    <h3>5️⃣ 测试密钥过期后试用</h3>
+                    <p style="color: #666; margin-bottom: 15px;">将密钥设置为过期状态，然后测试是否能继续试用</p>
+                    <div class="form-group">
+                        <label>密钥</label>
+                        <input type="text" id="expireTestLicense" class="form-control" placeholder="输入要测试的密钥">
+                    </div>
+                    <div style="display: flex; gap: 10px; margin-top: 15px;">
+                        <button class="btn btn-danger" onclick="setLicenseExpired()">⚠️ 设置为过期</button>
+                        <button class="btn btn-primary" onclick="testExpiredThenTrial()">🔍 测试过期后试用</button>
+                    </div>
+                    <div id="expireTestResult" style="margin-top: 15px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 配置（写死）
+        const API_URL = 'https://1340181402-6rjxdina8v.ap-guangzhou.tencentscf.com';
+        const ADMIN_KEY = 'ADMIN-KEY-2025';
+
+        // API 请求
+        async function apiRequest(action, data = {}) {
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action, adminKey: ADMIN_KEY, ...data })
+                });
+                return await response.json();
+            } catch (error) {
+                console.error('API 请求失败:', error);
+                alert('网络错误：' + error.message);
+                return { success: false, error: error.message };
+            }
+        }
+
+        // 切换标签页
+        function showTab(tabName) {
+            // 更新标签按钮
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            // 更新页面
+            document.querySelectorAll('.page').forEach(page => {
+                page.classList.remove('active');
+            });
+            document.getElementById('page-' + tabName).classList.add('active');
+            
+            // 加载数据
+            if (tabName === 'dashboard') loadDashboard();
+            else if (tabName === 'licenses') loadLicenses();
+            else if (tabName === 'trial') loadTrialDevices();
+            else if (tabName === 'logs') loadLogs();
+            else if (tabName === 'features') loadFeatureConfig();
+        }
+
+        // 加载仪表盘
+        async function loadDashboard() {
+            const result = await apiRequest('getStats');
+            
+            if (result.success) {
+                const stats = result.data;
+                document.getElementById('totalLicenses').textContent = stats.totalLicenses;
+                document.getElementById('activeLicenses').textContent = stats.activeLicenses;
+                document.getElementById('boundDevices').textContent = stats.boundDevices;
+                document.getElementById('trialDevices').textContent = stats.trialDevices;
+            }
+        }
+
+        // 批量生成密钥
+        let generatedLicensesCache = [];
+        
+        async function batchGenerateLicenses() {
+            const count = parseInt(document.getElementById('licenseCount').value);
+            const days = parseInt(document.getElementById('expireDays').value);
+            
+            if (!count || count <= 0) {
+                alert('请输入有效的生成数量');
+                return;
+            }
+            
+            if (count > 1000) {
+                alert('单次最多生成1000个密钥');
+                return;
+            }
+            
+            const result = await apiRequest('batchGenerateLicenses', { count, days });
+            
+            if (result.success) {
+                generatedLicensesCache = result.data.licenses;
+                
+                document.getElementById('generatedCount').textContent = result.data.count;
+                document.getElementById('generatedDays').textContent = result.data.isPermanent ? '永久' : result.data.days + '天';
+                document.getElementById('generatedExpire').textContent = 
+                    result.data.isPermanent ? '永久有效' : '激活后' + result.data.days + '天';
+                
+                // 显示密钥列表
+                const listHtml = generatedLicensesCache.map((lic, index) => 
+                    `${index + 1}. ${lic}`
+                ).join('<br>');
+                document.getElementById('licensesList').innerHTML = listHtml;
+                
+                document.getElementById('generatedResult').style.display = 'block';
+                
+                loadDashboard();
+            } else {
+                alert('❌ 生成失败：' + result.error);
+            }
+        }
+
+        // 导出密钥
+        function exportLicenses(format) {
+            if (generatedLicensesCache.length === 0) {
+                alert('没有可导出的密钥');
+                return;
+            }
+            
+            const days = parseInt(document.getElementById('expireDays').value);
+            const isPermanent = days === 0;
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+            let content, filename, mimeType;
+            
+            if (format === 'txt') {
+                content = generatedLicensesCache.join('\n');
+                filename = isPermanent ? `licenses-permanent-${timestamp}.txt` : `licenses-${days}days-${timestamp}.txt`;
+                mimeType = 'text/plain';
+            } else if (format === 'csv') {
+                content = '密钥,有效期,说明,状态\n';
+                const daysText = isPermanent ? '永久' : `${days}天`;
+                const expireNote = isPermanent ? '永久有效' : `激活后${days}天`;
+                generatedLicensesCache.forEach(lic => {
+                    content += `${lic},${daysText},${expireNote},未使用\n`;
+                });
+                filename = isPermanent ? `licenses-permanent-${timestamp}.csv` : `licenses-${days}days-${timestamp}.csv`;
+                mimeType = 'text/csv';
+            }
+            
+            const blob = new Blob([content], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(url);
+            
+            alert(`✅ 已导出 ${generatedLicensesCache.length} 个密钥`);
+        }
+
+        // 复制全部密钥
+        function copyAllLicenses() {
+            if (generatedLicensesCache.length === 0) {
+                alert('没有可复制的密钥');
+                return;
+            }
+            
+            const text = generatedLicensesCache.join('\n');
+            navigator.clipboard.writeText(text).then(() => {
+                alert(`✅ 已复制 ${generatedLicensesCache.length} 个密钥到剪贴板`);
+            });
+        }
+
+        // 加载密钥列表
+        let allLicensesCache = [];
+        let currentLicensesPage = 1;
+        const licensesPageSize = 20;
+        
+        async function loadLicenses() {
+            const result = await apiRequest('listAllLicenses');
+            
+            if (!result.success) {
+                document.getElementById('licensesTable').innerHTML = '<p>加载失败：' + result.error + '</p>';
+                return;
+            }
+            
+            allLicensesCache = result.data.licenses;
+            currentLicensesPage = 1;
+            renderLicenses(allLicensesCache);
+        }
+        
+        function renderLicenses(licenses) {
+            const start = (currentLicensesPage - 1) * licensesPageSize;
+            const end = start + licensesPageSize;
+            const pagedLicenses = licenses.slice(start, end);
+            const totalPages = Math.ceil(licenses.length / licensesPageSize);
+            
+            let html = '<table><thead><tr><th>密钥</th><th>期限</th><th>状态</th><th>设备ID</th><th>创建时间</th><th>激活时间</th><th>过期时间</th><th>剩余天数</th><th>操作</th></tr></thead><tbody>';
+            
+            pagedLicenses.forEach(lic => {
+                const now = Date.now();
+                const isPermanent = lic.days === 0;
+                const daysLeft = isPermanent ? Infinity : (lic.expireTime ? Math.ceil((lic.expireTime - now) / (1000 * 60 * 60 * 24)) : lic.days);
+                
+                let statusBadge;
+                if (lic.isExpired) {
+                    statusBadge = '<span class="badge badge-danger">已过期</span>';
+                } else if (lic.status === 'unused') {
+                    statusBadge = '<span class="badge badge-success">未使用</span>';
+                } else if (lic.status === 'activated') {
+                    statusBadge = '<span class="badge badge-warning">已激活</span>';
+                }
+                
+                let daysLeftBadge = '';
+                if (isPermanent) {
+                    daysLeftBadge = '<span class="badge badge-success">永久</span>';
+                } else if (lic.status === 'unused') {
+                    daysLeftBadge = `<span class="badge badge-success">激活后${lic.days}天</span>`;
+                } else if (!lic.isExpired) {
+                    if (daysLeft <= 7) {
+                        daysLeftBadge = `<span class="badge badge-danger">${daysLeft}天</span>`;
+                    } else if (daysLeft <= 30) {
+                        daysLeftBadge = `<span class="badge badge-warning">${daysLeft}天</span>`;
+                    } else {
+                        daysLeftBadge = `<span class="badge badge-success">${daysLeft}天</span>`;
+                    }
+                }
+                
+                const periodText = isPermanent ? '永久' : `${lic.days}天`;
+                const activatedTime = lic.status === 'unused' ? '-' : (lic.activatedAt || '-');
+                const expireDisplay = lic.status === 'unused' ? '待激活' : lic.expire;
+                
+                html += `<tr>
+                    <td style="font-family: monospace; font-size: 11px;">${lic.license}</td>
+                    <td>${periodText}</td>
+                    <td>${statusBadge}</td>
+                    <td style="font-family: monospace; font-size: 10px;">${lic.deviceId}</td>
+                    <td>${lic.created}</td>
+                    <td>${activatedTime}</td>
+                    <td>${expireDisplay}</td>
+                    <td>${daysLeftBadge}</td>
+                    <td><button class="btn btn-sm btn-danger" onclick="deleteLicense('${lic.license}')">删除</button></td>
+                </tr>`;
+            });
+            
+            html += '</tbody></table>';
+            
+            // 添加翻页控件
+            if (totalPages > 1) {
+                html += '<div style="margin-top: 20px; text-align: center;">';
+                html += `<button class="btn btn-primary" onclick="changeLicensesPage(${currentLicensesPage - 1})" ${currentLicensesPage === 1 ? 'disabled' : ''}>上一页</button>`;
+                html += `<span style="margin: 0 15px;">第 ${currentLicensesPage} / ${totalPages} 页 (共 ${licenses.length} 条)</span>`;
+                html += `<button class="btn btn-primary" onclick="changeLicensesPage(${currentLicensesPage + 1})" ${currentLicensesPage === totalPages ? 'disabled' : ''}>下一页</button>`;
+                html += '</div>';
+            }
+            
+            document.getElementById('licensesTable').innerHTML = html;
+        }
+        
+        function changeLicensesPage(page) {
+            const totalPages = Math.ceil(allLicensesCache.length / licensesPageSize);
+            if (page < 1 || page > totalPages) return;
+            currentLicensesPage = page;
+            renderLicenses(allLicensesCache);
+        }
+        
+        function filterLicenses() {
+            const statusFilter = document.getElementById('filterStatus').value;
+            const daysFilter = document.getElementById('filterDays').value;
+            
+            let filtered = allLicensesCache;
+            
+            if (statusFilter !== 'all') {
+                if (statusFilter === 'expired') {
+                    filtered = filtered.filter(l => l.isExpired);
+                } else {
+                    filtered = filtered.filter(l => l.status === statusFilter && !l.isExpired);
+                }
+            }
+            
+            if (daysFilter !== 'all') {
+                filtered = filtered.filter(l => l.days === parseInt(daysFilter));
+            }
+            
+            currentLicensesPage = 1;
+            renderLicenses(filtered);
+        }
+        
+        function exportAllLicenses(format = 'csv') {
+            if (allLicensesCache.length === 0) {
+                alert('没有可导出的密钥');
+                return;
+            }
+            
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+            let content, filename, mimeType;
+            
+            if (format === 'txt') {
+                content = allLicensesCache.map(lic => lic.license).join('\n');
+                filename = `all-licenses-${timestamp}.txt`;
+                mimeType = 'text/plain';
+            } else {
+                content = '密钥,期限,状态,设备ID,创建时间,过期时间\n';
+                
+                allLicensesCache.forEach(lic => {
+                    const status = lic.isExpired ? '已过期' : (lic.status === 'unused' ? '未使用' : '已激活');
+                    const periodText = (lic.isPermanent || lic.days === 0) ? '永久' : `${lic.days}天`;
+                    content += `${lic.license},${periodText},${status},${lic.deviceId},${lic.created},${lic.expire}\n`;
+                });
+                
+                filename = `all-licenses-${timestamp}.csv`;
+                mimeType = 'text/csv';
+            }
+            
+            const blob = new Blob([content], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(url);
+            
+            alert(`✅ 已导出 ${allLicensesCache.length} 个密钥`);
+        }
+
+        // 加载试用设备
+        let currentTrialPage = 1;
+        const trialPageSize = 20;
+        let allTrialDevices = [];
+        
+        async function loadTrialDevices() {
+            const result = await apiRequest('listTrialDevices');
+            
+            if (!result.success) {
+                document.getElementById('trialTable').innerHTML = '<p>加载失败：' + result.error + '</p>';
+                return;
+            }
+            
+            allTrialDevices = result.data.devices || [];
+            currentTrialPage = 1;
+            renderTrialDevices();
+        }
+        
+        function renderTrialDevices() {
+            const start = (currentTrialPage - 1) * trialPageSize;
+            const end = start + trialPageSize;
+            const pagedDevices = allTrialDevices.slice(start, end);
+            const totalPages = Math.ceil(allTrialDevices.length / trialPageSize);
+            
+            let html = '<table><thead><tr><th>设备ID</th><th>剩余次数</th><th>首次使用</th><th>最后使用</th><th>IP地址</th><th>操作</th></tr></thead><tbody>';
+            
+            pagedDevices.forEach(device => {
+                html += `<tr>
+                    <td style="font-family: monospace; font-size: 11px;">${device.deviceId}</td>
+                    <td><span class="badge ${device.remainingTasks > 5 ? 'badge-success' : device.remainingTasks > 0 ? 'badge-warning' : 'badge-danger'}">${device.remainingTasks} 次</span></td>
+                    <td>${device.firstSeen}</td>
+                    <td>${device.lastSeen}</td>
+                    <td>${device.lastIP}</td>
+                    <td>
+                        <button class="btn btn-primary btn-sm" onclick="resetTrialTasks('${device.deviceId}', 10)" style="margin-bottom: 5px;">重置为10次</button>
+                        <button class="btn btn-secondary btn-sm" onclick="resetTrialTasks('${device.deviceId}', 20)" style="margin-bottom: 5px;">重置为20次</button>
+                        <button class="btn btn-danger btn-sm" onclick="deleteTrialDevice('${device.deviceId}')">删除设备</button>
+                    </td>
+                </tr>`;
+            });
+            
+            html += '</tbody></table>';
+            
+            // 添加翻页控件
+            if (totalPages > 1) {
+                html += '<div style="margin-top: 20px; text-align: center;">';
+                html += `<button class="btn btn-primary" onclick="changeTrialPage(${currentTrialPage - 1})" ${currentTrialPage === 1 ? 'disabled' : ''}>上一页</button>`;
+                html += `<span style="margin: 0 15px;">第 ${currentTrialPage} / ${totalPages} 页 (共 ${allTrialDevices.length} 条)</span>`;
+                html += `<button class="btn btn-primary" onclick="changeTrialPage(${currentTrialPage + 1})" ${currentTrialPage === totalPages ? 'disabled' : ''}>下一页</button>`;
+                html += '</div>';
+            }
+            
+            if (allTrialDevices.length === 0) {
+                html = '<p style="text-align: center; color: #999; padding: 40px;">暂无试用设备</p>';
+            }
+            
+            document.getElementById('trialTable').innerHTML = html;
+        }
+        
+        function changeTrialPage(page) {
+            const totalPages = Math.ceil(allTrialDevices.length / trialPageSize);
+            if (page < 1 || page > totalPages) return;
+            currentTrialPage = page;
+            renderTrialDevices();
+        }
+
+        // 重置试用次数
+        async function resetTrialTasks(deviceId, tasks) {
+            if (!confirm(`确定要将设备 ${deviceId.substring(0, 16)}... 的试用次数重置为 ${tasks} 次吗？`)) {
+                return;
+            }
+
+            const result = await apiRequest('resetTrialTasks', { deviceId, tasks });
+
+            if (result.success) {
+                alert(`✅ 重置成功！\n\n设备ID: ${deviceId.substring(0, 16)}...\n原次数: ${result.data.oldTasks} 次\n新次数: ${result.data.newTasks} 次`);
+                loadTrialDevices(); // 重新加载列表
+            } else {
+                alert('❌ 重置失败：' + result.error);
+            }
+        }
+
+        // 删除试用设备
+        async function deleteTrialDevice(deviceId) {
+            if (!confirm(`⚠️ 确定要删除设备吗？\n\n设备ID: ${deviceId.substring(0, 16)}...\n\n删除后该设备可以重新激活试用（10次）`)) {
+                return;
+            }
+
+            const result = await apiRequest('deleteTrialDevice', { deviceId });
+
+            if (result.success) {
+                alert(`✅ 删除成功！\n\n设备ID: ${deviceId.substring(0, 16)}...\n原剩余次数: ${result.data.deletedTasks} 次\n\n该设备现在可以重新激活试用`);
+                loadTrialDevices(); // 重新加载列表
+            } else {
+                alert('❌ 删除失败：' + result.error);
+            }
+        }
+
+        // 加载操作日志
+        let currentLogsPage = 1;
+        const logsPageSize = 50;
+        let allLogs = [];
+        
+        async function loadLogs() {
+            const result = await apiRequest('getLogs', { page: 1, pageSize: 1000 });
+            
+            if (!result.success) {
+                document.getElementById('logsTable').innerHTML = '<p>加载失败：' + result.error + '</p>';
+                return;
+            }
+            
+            const filterAction = document.getElementById('filterLogAction')?.value || 'all';
+            allLogs = result.data.logs || [];
+            
+            // 筛选操作类型
+            if (filterAction !== 'all') {
+                allLogs = allLogs.filter(log => log.action === filterAction);
+            }
+            
+            currentLogsPage = 1;
+            renderLogs();
+        }
+        
+        function renderLogs() {
+            const start = (currentLogsPage - 1) * logsPageSize;
+            const end = start + logsPageSize;
+            const pagedLogs = allLogs.slice(start, end);
+            const totalPages = Math.ceil(allLogs.length / logsPageSize);
+            
+            let html = '<table><thead><tr><th>时间</th><th>操作</th><th>详情</th><th>IP地址</th></tr></thead><tbody>';
+            
+            pagedLogs.forEach(log => {
+                let actionText = '';
+                let details = '';
+                
+                switch(log.action) {
+                    case 'activate':
+                        actionText = '<span class="badge badge-success">密钥激活</span>';
+                        details = `密钥: ${log.license}<br>设备: ${log.deviceId}`;
+                        break;
+                    case 'trial_activate':
+                        actionText = '<span class="badge badge-warning">试用激活</span>';
+                        details = `设备: ${log.deviceId}`;
+                        break;
+                    case 'trial_task':
+                        actionText = '<span class="badge badge-warning">试用任务</span>';
+                        details = `设备: ${log.deviceId}<br>剩余: ${log.remainingTasks} 次`;
+                        break;
+                    case 'batch_generate':
+                        actionText = '<span class="badge badge-success">批量生成</span>';
+                        details = `数量: ${log.count} 个<br>期限: ${log.days} 天`;
+                        break;
+                    case 'delete':
+                        actionText = '<span class="badge badge-danger">删除密钥</span>';
+                        details = `密钥: ${log.license}`;
+                        break;
+                    default:
+                        actionText = log.action;
+                        details = JSON.stringify(log);
+                }
+                
+                html += `<tr>
+                    <td style="white-space: nowrap;">${log.timestamp}</td>
+                    <td>${actionText}</td>
+                    <td style="font-size: 11px;">${details}</td>
+                    <td>${log.ip || '-'}</td>
+                </tr>`;
+            });
+            
+            html += '</tbody></table>';
+            
+            // 添加翻页控件
+            if (totalPages > 1) {
+                html += '<div style="margin-top: 20px; text-align: center;">';
+                html += `<button class="btn btn-primary" onclick="changeLogsPage(${currentLogsPage - 1})" ${currentLogsPage === 1 ? 'disabled' : ''}>上一页</button>`;
+                html += `<span style="margin: 0 15px;">第 ${currentLogsPage} / ${totalPages} 页 (共 ${allLogs.length} 条)</span>`;
+                html += `<button class="btn btn-primary" onclick="changeLogsPage(${currentLogsPage + 1})" ${currentLogsPage === totalPages ? 'disabled' : ''}>下一页</button>`;
+                html += '</div>';
+            }
+            
+            if (allLogs.length === 0) {
+                html = '<p style="text-align: center; color: #999; padding: 40px;">暂无操作日志</p>';
+            }
+            
+            document.getElementById('logsTable').innerHTML = html;
+        }
+        
+        function changeLogsPage(page) {
+            const totalPages = Math.ceil(allLogs.length / logsPageSize);
+            if (page < 1 || page > totalPages) return;
+            currentLogsPage = page;
+            renderLogs();
+        }
+
+        // 删除密钥
+        async function deleteLicense(license) {
+            if (!confirm('确定要删除此密钥吗？')) return;
+            
+            const result = await apiRequest('deleteLicense', { license });
+            
+            if (result.success) {
+                alert('✅ 删除成功');
+                loadLicenses();
+                loadDashboard();
+            } else {
+                alert('❌ 删除失败：' + result.error);
+            }
+        }
+
+        // 搜索表格
+        function searchTable(tableId) {
+            const input = event.target.value.toLowerCase();
+            const table = document.getElementById(tableId);
+            const rows = table.querySelectorAll('tbody tr');
+            
+            rows.forEach(row => {
+                const text = row.textContent.toLowerCase();
+                row.style.display = text.includes(input) ? '' : 'none';
+            });
+        }
+
+        // ==================== 测试工具函数 ====================
+
+        // 加载功能配置
+        async function loadFeatureConfig() {
+            const result = await apiRequest('getFeatureConfig');
+            
+            if (result.success) {
+                const config = result.data;
+                document.getElementById('feature-export').checked = config.export !== false;
+                document.getElementById('feature-download').checked = config.download !== false;
+                document.getElementById('feature-turboDownload').checked = config.turboDownload !== false;
+                document.getElementById('feature-search').checked = config.search !== false;
+                document.getElementById('feature-searchResult').checked = config.searchResult !== false;
+                document.getElementById('feature-column').checked = config.column !== false;
+                document.getElementById('feature-digest').checked = config.digest !== false;
+                document.getElementById('feature-backup').checked = config.backup !== false;
+            }
+        }
+
+        // 保存功能配置
+        async function saveFeatureConfig() {
+            const config = {
+                export: document.getElementById('feature-export').checked,
+                download: document.getElementById('feature-download').checked,
+                turboDownload: document.getElementById('feature-turboDownload').checked,
+                search: document.getElementById('feature-search').checked,
+                searchResult: document.getElementById('feature-searchResult').checked,
+                column: document.getElementById('feature-column').checked,
+                digest: document.getElementById('feature-digest').checked,
+                backup: document.getElementById('feature-backup').checked
+            };
+
+            const resultDiv = document.getElementById('featureConfigResult');
+            resultDiv.innerHTML = '<div class="alert alert-info">⏳ 保存中...</div>';
+
+            const result = await apiRequest('updateFeatureConfig', { config });
+
+            if (result.success) {
+                resultDiv.innerHTML = '<div class="alert alert-success">✅ 功能配置已保存！插件重新加载后生效</div>';
+                setTimeout(() => {
+                    resultDiv.innerHTML = '';
+                }, 3000);
+            } else {
+                resultDiv.innerHTML = `<div class="alert alert-error">❌ 保存失败：${result.error}</div>`;
+            }
+        }
+
+        // 全部启用
+        function enableAllFeatures() {
+            document.getElementById('feature-export').checked = true;
+            document.getElementById('feature-download').checked = true;
+            document.getElementById('feature-turboDownload').checked = true;
+            document.getElementById('feature-search').checked = true;
+            document.getElementById('feature-searchResult').checked = true;
+            document.getElementById('feature-column').checked = true;
+            document.getElementById('feature-digest').checked = true;
+            document.getElementById('feature-backup').checked = true;
+        }
+
+        // 全部禁用
+        function disableAllFeatures() {
+            if (!confirm('⚠️ 确定要禁用所有功能吗？\n\n这将使插件无法使用任何功能！')) {
+                return;
+            }
+            document.getElementById('feature-export').checked = false;
+            document.getElementById('feature-download').checked = false;
+            document.getElementById('feature-turboDownload').checked = false;
+            document.getElementById('feature-search').checked = false;
+            document.getElementById('feature-searchResult').checked = false;
+            document.getElementById('feature-column').checked = false;
+            document.getElementById('feature-digest').checked = false;
+            document.getElementById('feature-backup').checked = false;
+        }
+
+        // ==================== 测试工具函数 ====================
+
+        // 测试激活
+        async function testActivate() {
+            const license = document.getElementById('testLicense').value.trim();
+            const deviceId = document.getElementById('testDeviceId').value.trim() || 
+                            'test-' + Date.now() + '-' + Math.random().toString(36).substring(2, 15);
+            const resultDiv = document.getElementById('testActivateResult');
+            
+            if (!license) {
+                resultDiv.innerHTML = '<div class="alert alert-error">❌ 请输入密钥</div>';
+                return;
+            }
+            
+            resultDiv.innerHTML = '<div class="alert alert-info">⏳ 测试中...</div>';
+            
+            const result = await apiRequest('activate', { license, deviceId });
+            
+            if (result.success) {
+                const data = result.data;
+                let html = '<div class="alert alert-success">';
+                html += '<h4>✅ 激活成功</h4>';
+                html += '<table class="info-table">';
+                html += `<tr><td>状态</td><td><strong>${data.status === 'trial' ? '试用' : '正式授权'}</strong></td></tr>`;
+                html += `<tr><td>设备ID</td><td><code>${deviceId}</code></td></tr>`;
+                
+                if (data.status === 'trial') {
+                    html += `<tr><td>剩余次数</td><td><strong>${data.remainingTasks}</strong> 次</td></tr>`;
+                } else {
+                    html += `<tr><td>是否永久</td><td>${data.isPermanent ? '<span style="color: #10b981;">✅ 永久授权</span>' : '❌ 时间授权'}</td></tr>`;
+                    if (!data.isPermanent && data.expireDate) {
+                        html += `<tr><td>到期日期</td><td><strong>${data.expireDate}</strong></td></tr>`;
+                    }
+                    html += `<tr><td>无限制</td><td>${data.unlimited ? '✅ 是' : '❌ 否'}</td></tr>`;
+                }
+                
+                html += '</table></div>';
+                resultDiv.innerHTML = html;
+            } else {
+                resultDiv.innerHTML = `<div class="alert alert-error"><h4>❌ 激活失败</h4><p>${result.message || result.error || '未知错误'}</p></div>`;
+            }
+        }
+
+        // 测试任务权限
+        async function testTaskPermission() {
+            const deviceId = document.getElementById('testTaskDeviceId').value.trim();
+            const resultDiv = document.getElementById('testTaskResult');
+            
+            if (!deviceId) {
+                resultDiv.innerHTML = '<div class="alert alert-error">❌ 请输入设备ID</div>';
+                return;
+            }
+            
+            resultDiv.innerHTML = '<div class="alert alert-info">⏳ 测试中...</div>';
+            
+            const result = await apiRequest('checkTask', { deviceId });
+            
+            if (result.success) {
+                const data = result.data;
+                let html = '<div class="alert alert-success">';
+                html += '<h4>✅ 有权限执行任务</h4>';
+                html += '<table class="info-table">';
+                html += `<tr><td>状态</td><td><strong>${data.status === 'trial' ? '试用' : '正式授权'}</strong></td></tr>`;
+                
+                if (data.status === 'trial') {
+                    html += `<tr><td>剩余次数</td><td><strong>${data.remainingTasks}</strong> 次</td></tr>`;
+                    html += `<tr><td>提示</td><td style="color: #f59e0b;">⚠️ 本次测试已扣除1次试用次数</td></tr>`;
+                } else {
+                    html += `<tr><td>是否永久</td><td>${data.isPermanent ? '<span style="color: #10b981;">✅ 永久授权</span>' : '❌ 时间授权'}</td></tr>`;
+                    html += `<tr><td>无限制</td><td>${data.unlimited ? '✅ 是' : '❌ 否'}</td></tr>`;
+                }
+                
+                html += '</table></div>';
+                resultDiv.innerHTML = html;
+            } else {
+                resultDiv.innerHTML = `<div class="alert alert-error"><h4>❌ 无权限</h4><p>${result.message || result.error || '未知错误'}</p></div>`;
+            }
+        }
+
+        // 测试试用
+        async function testTrial() {
+            const deviceId = document.getElementById('testTrialDeviceId').value.trim() || 
+                            'trial-test-' + Date.now() + '-' + Math.random().toString(36).substring(2, 15);
+            const resultDiv = document.getElementById('testTrialResult');
+            
+            resultDiv.innerHTML = '<div class="alert alert-info">⏳ 测试中...</div>';
+            
+            const trialKey = 'TRIAL-' + Date.now();
+            
+            // 使用随机IP进行测试（通过请求头模拟）
+            const randomIP = `192.168.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`;
+            
+            const result = await fetch(API_URL, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-Forwarded-For': randomIP,  // 模拟不同IP
+                    'X-Real-IP': randomIP
+                },
+                body: JSON.stringify({ 
+                    action: 'activate', 
+                    license: trialKey, 
+                    deviceId: deviceId 
+                })
+            }).then(res => res.json());
+            
+            if (result.success) {
+                const data = result.data;
+                let html = '<div class="alert alert-success">';
+                html += '<h4>✅ 试用激活成功</h4>';
+                html += '<table class="info-table">';
+                html += `<tr><td>试用密钥</td><td><code>${trialKey}</code></td></tr>`;
+                html += `<tr><td>设备ID</td><td><code>${deviceId}</code></td></tr>`;
+                html += `<tr><td>模拟IP</td><td><code>${randomIP}</code></td></tr>`;
+                html += `<tr><td>剩余次数</td><td><strong>${data.remainingTasks}</strong> 次</td></tr>`;
+                html += `<tr><td>状态</td><td><strong>试用模式</strong></td></tr>`;
+                html += '</table>';
+                html += '<p style="margin-top: 10px; color: #666;">💡 提示：每次测试使用随机IP，可以多次测试</p>';
+                html += '</div>';
+                resultDiv.innerHTML = html;
+            } else {
+                resultDiv.innerHTML = `<div class="alert alert-error"><h4>❌ 试用失败</h4><p>${result.message || result.error || '未知错误'}</p></div>`;
+            }
+        }
+
+        // 查询密钥信息
+        async function queryLicenseInfo() {
+            const license = document.getElementById('queryLicense').value.trim();
+            const resultDiv = document.getElementById('queryLicenseResult');
+            
+            if (!license) {
+                resultDiv.innerHTML = '<div class="alert alert-error">❌ 请输入密钥</div>';
+                return;
+            }
+            
+            resultDiv.innerHTML = '<div class="alert alert-info">⏳ 查询中...</div>';
+            
+            // 通过列表接口查询
+            const result = await apiRequest('listAllLicenses');
+            
+            if (result.success) {
+                const found = result.data.licenses.find(l => l.license === license);
+                
+                if (found) {
+                    let html = '<div class="alert alert-success">';
+                    html += '<h4>✅ 找到密钥</h4>';
+                    html += '<table class="info-table">';
+                    html += `<tr><td>密钥</td><td><code>${found.license}</code></td></tr>`;
+                    html += `<tr><td>期限</td><td><strong>${found.isPermanent ? '永久' : found.days + '天'}</strong></td></tr>`;
+                    html += `<tr><td>状态</td><td><span class="badge ${found.status === 'activated' ? 'badge-success' : 'badge-warning'}">${found.status === 'unused' ? '未使用' : '已激活'}</span></td></tr>`;
+                    html += `<tr><td>绑定设备</td><td>${found.deviceId === '未绑定' ? '<span style="color: #999;">未绑定</span>' : '<code>' + found.deviceId + '</code>'}</td></tr>`;
+                    html += `<tr><td>创建时间</td><td>${found.created}</td></tr>`;
+                    
+                    if (found.activatedAt) {
+                        html += `<tr><td>激活时间</td><td>${found.activatedAt}</td></tr>`;
+                    }
+                    
+                    html += `<tr><td>到期时间</td><td><strong>${found.expire}</strong></td></tr>`;
+                    
+                    if (found.isExpired) {
+                        html += `<tr><td>是否过期</td><td><span style="color: #ef4444;">⚠️ 已过期</span></td></tr>`;
+                    }
+                    
+                    if (found.lastSeen && found.lastSeen !== '未知') {
+                        html += `<tr><td>最后使用</td><td>${found.lastSeen}</td></tr>`;
+                    }
+                    
+                    if (found.lastIP && found.lastIP !== '-') {
+                        html += `<tr><td>最后IP</td><td><code>${found.lastIP}</code></td></tr>`;
+                    }
+                    
+                    html += '</table></div>';
+                    resultDiv.innerHTML = html;
+                } else {
+                    resultDiv.innerHTML = '<div class="alert alert-error"><h4>❌ 未找到密钥</h4><p>该密钥不存在或已被删除</p></div>';
+                }
+            } else {
+                resultDiv.innerHTML = `<div class="alert alert-error"><h4>❌ 查询失败</h4><p>${result.error || '未知错误'}</p></div>`;
+            }
+        }
+
+        // 设置密钥为过期状态
+        async function setLicenseExpired() {
+            const license = document.getElementById('expireTestLicense').value.trim();
+            const resultDiv = document.getElementById('expireTestResult');
+            
+            if (!license) {
+                resultDiv.innerHTML = '<div class="alert alert-error">❌ 请输入密钥</div>';
+                return;
+            }
+            
+            if (!confirm('⚠️ 确定要将此密钥设置为过期状态吗？\n\n这将修改密钥的到期时间为过去的时间。')) {
+                return;
+            }
+            
+            resultDiv.innerHTML = '<div class="alert alert-info">⏳ 设置中...</div>';
+            
+            const result = await apiRequest('setLicenseExpired', { license });
+            
+            if (result.success) {
+                resultDiv.innerHTML = `<div class="alert alert-success"><h4>✅ 设置成功</h4><p>密钥已设置为过期状态，到期时间：${result.data.expireTime}</p></div>`;
+            } else {
+                resultDiv.innerHTML = `<div class="alert alert-error"><h4>❌ 设置失败</h4><p>${result.error || '未知错误'}</p></div>`;
+            }
+        }
+
+        // 测试过期后试用
+        async function testExpiredThenTrial() {
+            const license = document.getElementById('expireTestLicense').value.trim();
+            const resultDiv = document.getElementById('expireTestResult');
+            
+            if (!license) {
+                resultDiv.innerHTML = '<div class="alert alert-error">❌ 请输入密钥</div>';
+                return;
+            }
+            
+            resultDiv.innerHTML = '<div class="alert alert-info">⏳ 测试中...</div>';
+            
+            // 步骤1：查询密钥信息
+            const listResult = await apiRequest('listAllLicenses');
+            if (!listResult.success) {
+                resultDiv.innerHTML = `<div class="alert alert-error"><h4>❌ 查询失败</h4><p>${listResult.error}</p></div>`;
+                return;
+            }
+            
+            const found = listResult.data.licenses.find(l => l.license === license);
+            if (!found) {
+                resultDiv.innerHTML = '<div class="alert alert-error"><h4>❌ 密钥不存在</h4></div>';
+                return;
+            }
+            
+            const deviceId = found.deviceId === '未绑定' ? null : found.deviceId;
+            
+            let html = '<div class="alert alert-info">';
+            html += '<h4>📋 测试流程</h4>';
+            html += '<table class="info-table">';
+            html += `<tr><td>密钥</td><td><code>${license}</code></td></tr>`;
+            html += `<tr><td>当前状态</td><td>${found.isExpired ? '<span style="color: #ef4444;">⚠️ 已过期</span>' : '<span style="color: #10b981;">✅ 有效</span>'}</td></tr>`;
+            html += `<tr><td>绑定设备</td><td>${deviceId ? '<code>' + deviceId + '</code>' : '<span style="color: #999;">未绑定</span>'}</td></tr>`;
+            html += '</table>';
+            
+            // 步骤2：如果密钥未过期，先设置为过期
+            if (!found.isExpired) {
+                html += '<p style="margin-top: 15px;">⏳ 步骤1：设置密钥为过期...</p>';
+                resultDiv.innerHTML = html + '</div>';
+                
+                const expireResult = await apiRequest('setLicenseExpired', { license });
+                if (!expireResult.success) {
+                    resultDiv.innerHTML = `<div class="alert alert-error"><h4>❌ 设置过期失败</h4><p>${expireResult.error}</p></div>`;
+                    return;
+                }
+                
+                html += '<p style="color: #10b981;">✅ 步骤1完成：密钥已设置为过期</p>';
+            } else {
+                html += '<p style="margin-top: 15px; color: #10b981;">✅ 密钥已经是过期状态</p>';
+            }
+            
+            // 步骤3：尝试使用过期密钥激活（应该失败）
+            html += '<p style="margin-top: 10px;">⏳ 步骤2：尝试使用过期密钥激活...</p>';
+            resultDiv.innerHTML = html + '</div>';
+            
+            const testDeviceId = deviceId || 'test-expired-' + Date.now();
+            const activateResult = await apiRequest('activate', { license, deviceId: testDeviceId });
+            
+            if (activateResult.success) {
+                html += '<p style="color: #ef4444;">❌ 步骤2失败：过期密钥不应该能激活！</p>';
+                resultDiv.innerHTML = html + '</div>';
+                return;
+            } else {
+                html += `<p style="color: #10b981;">✅ 步骤2通过：过期密钥无法激活（${activateResult.error}）</p>`;
+            }
+            
+            // 步骤4：尝试试用（应该成功，如果IP未试用过）
+            html += '<p style="margin-top: 10px;">⏳ 步骤3：尝试使用试用密钥激活...</p>';
+            resultDiv.innerHTML = html + '</div>';
+            
+            const trialKey = 'TRIAL-' + Date.now();
+            const trialDeviceId = 'trial-after-expire-' + Date.now();
+            
+            // 使用随机IP进行测试
+            const randomIP = `192.168.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`;
+            
+            const trialResult = await fetch(API_URL, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-Forwarded-For': randomIP,
+                    'X-Real-IP': randomIP
+                },
+                body: JSON.stringify({ 
+                    action: 'activate', 
+                    license: trialKey, 
+                    deviceId: trialDeviceId 
+                })
+            }).then(res => res.json());
+            
+            if (trialResult.success) {
+                html += '<p style="color: #10b981;">✅ 步骤3通过：可以使用试用功能！</p>';
+                html += '<table class="info-table" style="margin-top: 10px;">';
+                html += `<tr><td>试用密钥</td><td><code>${trialKey}</code></td></tr>`;
+                html += `<tr><td>试用设备</td><td><code>${trialDeviceId}</code></td></tr>`;
+                html += `<tr><td>模拟IP</td><td><code>${randomIP}</code></td></tr>`;
+                html += `<tr><td>剩余次数</td><td><strong>${trialResult.data.remainingTasks}</strong> 次</td></tr>`;
+                html += '</table>';
+                html += '<div style="margin-top: 15px; padding: 12px; background: #d4edda; border-radius: 6px; border-left: 4px solid #28a745;">';
+                html += '<strong style="color: #155724;">🎉 测试结论：密钥过期后，用户可以继续使用试用功能！</strong>';
+                html += '</div>';
+            } else {
+                html += `<p style="color: #ef4444;">❌ 步骤3失败：无法使用试用功能（${trialResult.message || trialResult.error}）</p>`;
+                html += '<div style="margin-top: 15px; padding: 12px; background: #f8d7da; border-radius: 6px; border-left: 4px solid #dc3545;">';
+                html += '<strong style="color: #721c24;">⚠️ 测试结论：密钥过期后，用户无法使用试用功能（可能IP已试用过）</strong>';
+                html += '</div>';
+            }
+            
+            resultDiv.innerHTML = html + '</div>';
+        }
+
+        // 页面加载时初始化
+        window.onload = () => {
+            loadDashboard();
+        };
+    </script>
+</body>
+</html>
