@@ -782,15 +782,15 @@
         </div>
 
         <div class="tabs">
-            <button class="tab active" onclick="showTab('dashboard', this)">📊 仪表盘</button>
-            <button class="tab" onclick="showTab('generate', this)">➕ 生成密钥</button>
-            <button class="tab" onclick="showTab('licenses', this)">🔑 密钥列表</button>
-            <button class="tab" onclick="showTab('config', this)">⚙️ 系统配置</button>
-            <button class="tab" onclick="showTab('trial', this)">🎁 试用设备</button>
-            <button class="tab" onclick="showTab('logs', this)">📋 操作日志</button>
-            <button class="tab" onclick="showTab('features', this)">⚙️ 功能管理</button>
-            <button class="tab" onclick="showTab('stats', this)">📈 使用统计</button>
-            <button class="tab" onclick="showTab('test', this)">🧪 测试工具</button>
+            <button class="tab active" onclick="showTab('dashboard')">📊 仪表盘</button>
+            <button class="tab" onclick="showTab('generate')">➕ 生成密钥</button>
+            <button class="tab" onclick="showTab('licenses')">🔑 密钥列表</button>
+            <button class="tab" onclick="showTab('config')">⚙️ 系统配置</button>
+            <button class="tab" onclick="showTab('trial')">🎁 试用设备</button>
+            <button class="tab" onclick="showTab('logs')">📋 操作日志</button>
+            <button class="tab" onclick="showTab('features')">⚙️ 功能管理</button>
+            <button class="tab" onclick="showTab('stats')">📈 使用统计</button>
+            <button class="tab" onclick="showTab('test')">🧪 测试工具</button>
         </div>
 
         <div class="content">
@@ -1192,136 +1192,109 @@
     </div>
 
     <script>
+        // 管理密码
+        const ADMIN_PASSWORD = 'Qq112233';
         const SESSION_KEY = 'admin_session';
         const SESSION_DURATION = 24 * 60 * 60 * 1000; // 24小时
-        const API_URL = 'https://1340181402-6rjxdina8v.ap-guangzhou.tencentscf.com';
-
-        function readSession() {
-            const raw = localStorage.getItem(SESSION_KEY);
-            if (!raw) return null;
-
-            try {
-                return JSON.parse(raw);
-            } catch (error) {
-                localStorage.removeItem(SESSION_KEY);
-                return null;
+        
+        // 检查登录状态
+        function checkLoginStatus() {
+            const session = localStorage.getItem(SESSION_KEY);
+            if (session) {
+                try {
+                    const sessionData = JSON.parse(session);
+                    const now = Date.now();
+                    
+                    // 检查会话是否过期
+                    if (sessionData.expiry && now < sessionData.expiry) {
+                        showMainContent();
+                        return true;
+                    } else {
+                        // 会话过期，清除
+                        localStorage.removeItem(SESSION_KEY);
+                    }
+                } catch (e) {
+                    localStorage.removeItem(SESSION_KEY);
+                }
             }
+            return false;
         }
-
-        function clearSession() {
-            localStorage.removeItem(SESSION_KEY);
-        }
-
-        function showLoginPage() {
-            document.getElementById('mainContent').classList.remove('show');
-            document.getElementById('loginPage').style.display = 'flex';
-            setTimeout(() => {
+        
+        // 处理登录
+        function handleLogin(event) {
+            event.preventDefault();
+            
+            const password = document.getElementById('loginPassword').value;
+            const errorDiv = document.getElementById('loginError');
+            
+            if (password === ADMIN_PASSWORD) {
+                // 登录成功，保存会话
+                const sessionData = {
+                    loggedIn: true,
+                    expiry: Date.now() + SESSION_DURATION
+                };
+                localStorage.setItem(SESSION_KEY, JSON.stringify(sessionData));
+                
+                // 显示主内容
+                showMainContent();
+                
+                // 清空密码输入框
+                document.getElementById('loginPassword').value = '';
+                errorDiv.classList.remove('show');
+            } else {
+                // 密码错误
+                errorDiv.classList.add('show');
+                document.getElementById('loginPassword').value = '';
                 document.getElementById('loginPassword').focus();
-            }, 100);
+                
+                // 3秒后隐藏错误提示
+                setTimeout(() => {
+                    errorDiv.classList.remove('show');
+                }, 3000);
+            }
+            
+            return false;
         }
-
+        
+        // 显示主内容
         function showMainContent() {
             document.getElementById('loginPage').style.display = 'none';
             document.getElementById('mainContent').classList.add('show');
         }
-
-        function checkLoginStatus() {
-            const session = readSession();
-            if (!session || !session.token) {
-                clearSession();
-                return false;
+        
+        // 退出登录
+        function logout() {
+            if (confirm('确定要退出登录吗？')) {
+                localStorage.removeItem(SESSION_KEY);
+                location.reload();
             }
-
-            if (session.expiry && Date.now() >= session.expiry) {
-                clearSession();
-                return false;
-            }
-
-            showMainContent();
-            return true;
         }
+        
+        // 页面加载时检查登录状态
+        window.addEventListener('DOMContentLoaded', () => {
+            if (!checkLoginStatus()) {
+                // 未登录，显示登录页面
+                document.getElementById('loginPage').style.display = 'flex';
+                // 聚焦到密码输入框
+                setTimeout(() => {
+                    document.getElementById('loginPassword').focus();
+                }, 100);
+            }
+        });
+        
+        // 配置（写死）
+        const API_URL = 'https://1340181402-6rjxdina8v.ap-guangzhou.tencentscf.com';
+        const ADMIN_KEY = 'ADMIN-KEY-2025';
 
-        async function handleLogin(event) {
-            event.preventDefault();
-
-            const passwordInput = document.getElementById('loginPassword');
-            const errorDiv = document.getElementById('loginError');
-            const loginBtn = event.target.querySelector('button[type="submit"]');
-
-            errorDiv.classList.remove('show');
-            errorDiv.textContent = '密码错误，请重试';
-            loginBtn.disabled = true;
-            loginBtn.textContent = '登录中...';
-
+        // API 请求
+        async function apiRequest(action, data = {}) {
             try {
                 const response = await fetch(API_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        action: 'adminLogin',
-                        password: passwordInput.value
-                    })
+                    body: JSON.stringify({ action, adminKey: ADMIN_KEY, ...data })
                 });
-                const result = await response.json();
-
-                if (!result.success || !result.data?.token) {
-                    errorDiv.textContent = result.error || '登录失败，请重试';
-                    errorDiv.classList.add('show');
-                    passwordInput.value = '';
-                    passwordInput.focus();
-                    return false;
-                }
-
-                localStorage.setItem(SESSION_KEY, JSON.stringify({
-                    token: result.data.token,
-                    expiry: result.data.expiresAt || (Date.now() + SESSION_DURATION)
-                }));
-
-                passwordInput.value = '';
-                showMainContent();
-                await initializeAfterLogin();
-            } catch (error) {
-                console.error('登录失败:', error);
-                errorDiv.textContent = `网络错误：${error.message}`;
-                errorDiv.classList.add('show');
-            } finally {
-                loginBtn.disabled = false;
-                loginBtn.textContent = '登录';
-            }
-
-            return false;
-        }
-
-        function logout() {
-            if (confirm('确定要退出登录吗？')) {
-                clearSession();
-                location.reload();
-            }
-        }
-
-        async function apiRequest(action, data = {}) {
-            const session = readSession();
-            const headers = { 'Content-Type': 'application/json' };
-
-            if (session?.token) {
-                headers.Authorization = `Bearer ${session.token}`;
-            }
-
-            try {
-                const response = await fetch(API_URL, {
-                    method: 'POST',
-                    headers,
-                    body: JSON.stringify({ action, ...data })
-                });
-                const result = await response.json();
-
-                if (!result.success && ['无权限', '请先登录管理后台', '管理员会话无效', '管理员会话已过期'].includes(result.error)) {
-                    clearSession();
-                    alert('登录已失效，请重新登录');
-                    showLoginPage();
-                }
-
-                return result;
+                return await response.json();
             } catch (error) {
                 console.error('API 请求失败:', error);
                 alert('网络错误：' + error.message);
@@ -1329,56 +1302,34 @@
             }
         }
 
-        async function loadTabData(tabName) {
-            if (tabName === 'dashboard') await loadDashboard();
-            else if (tabName === 'licenses') await loadLicenses();
-            else if (tabName === 'config') await loadGlobalConfig();
-            else if (tabName === 'trial') await loadTrialDevices();
-            else if (tabName === 'logs') await loadLogs();
-            else if (tabName === 'features') await loadFeatureConfig();
-            else if (tabName === 'stats') {
-                initStatsPage();
-                await loadUsageStats();
-            }
-        }
-
-        async function initializeAfterLogin() {
-            const savedTab = localStorage.getItem('adminCurrentTab') || 'dashboard';
-            const tabs = Array.from(document.querySelectorAll('.tab'));
-            const targetTab = tabs.find(tab => tab.getAttribute('onclick')?.includes(`showTab('${savedTab}'`));
-
-            if (targetTab) {
-                await showTab(savedTab, targetTab, false);
-                return;
-            }
-
-            await showTab('dashboard', tabs[0] || null, false);
-        }
-
         // 切换标签页
-        async function showTab(tabName, activeButton = null, persist = true) {
+        function showTab(tabName) {
+            // 更新标签按钮
             document.querySelectorAll('.tab').forEach(tab => {
                 tab.classList.remove('active');
             });
-
-            if (activeButton) {
-                activeButton.classList.add('active');
-            }
-
+            event.target.classList.add('active');
+            
+            // 更新页面
             document.querySelectorAll('.page').forEach(page => {
                 page.classList.remove('active');
             });
-
-            const page = document.getElementById('page-' + tabName);
-            if (page) {
-                page.classList.add('active');
+            document.getElementById('page-' + tabName).classList.add('active');
+            
+            // 保存当前标签页到localStorage
+            localStorage.setItem('adminCurrentTab', tabName);
+            
+            // 加载数据
+            if (tabName === 'dashboard') loadDashboard();
+            else if (tabName === 'licenses') loadLicenses();
+            else if (tabName === 'config') loadGlobalConfig();
+            else if (tabName === 'trial') loadTrialDevices();
+            else if (tabName === 'logs') loadLogs();
+            else if (tabName === 'features') loadFeatureConfig();
+            else if (tabName === 'stats') {
+                initStatsPage();
+                loadUsageStats();
             }
-
-            if (persist) {
-                localStorage.setItem('adminCurrentTab', tabName);
-            }
-
-            await loadTabData(tabName);
         }
 
         // 加载仪表盘
@@ -2747,14 +2698,7 @@
         }
 
         // 页面加载时初始化
-        window.onload = async () => {
-            if (!checkLoginStatus()) {
-                showLoginPage();
-                return;
-            }
-
-            await initializeAfterLogin();
-            return;
+        window.onload = () => {
             // 恢复上次的标签页
             const savedTab = localStorage.getItem('adminCurrentTab') || 'dashboard';
             
