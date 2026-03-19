@@ -214,6 +214,18 @@
             const savedTab = localStorage.getItem('adminCurrentTab') || 'dashboard';
             const tabs = document.querySelectorAll('.tab');
             let targetTab = null;
+            const licenseCountInput = document.getElementById('licenseCount');
+            const expireDaysSelect = document.getElementById('expireDays');
+
+            if (licenseCountInput && !licenseCountInput.value) {
+                licenseCountInput.value = '50';
+            } else if (licenseCountInput && Number.parseInt(licenseCountInput.value, 10) === 10) {
+                licenseCountInput.value = '50';
+            }
+
+            if (expireDaysSelect && expireDaysSelect.value === '365') {
+                expireDaysSelect.value = '0';
+            }
 
             tabs.forEach(tab => {
                 const tabName = tab.getAttribute('onclick')?.match(/showTab\('(.+?)'\)/)?.[1];
@@ -243,7 +255,7 @@
                     loadUsageStats();
                 }
             } else {
-                loadDashboard();
+                showTab('dashboard');
             }
         }
 
@@ -2258,6 +2270,8 @@
                     log.license,
                     log.deviceId,
                     log.ip,
+                    log.matchReason,
+                    log.matchReasonLabel,
                     log.remainingTasks,
                     log.oldTasks,
                     log.newTasks
@@ -2284,20 +2298,25 @@
             const pagedLogs = logs.slice(start, end);
             const totalPages = Math.ceil(logs.length / logsPageSize);
 
-            let html = '<table><thead><tr><th>时间</th><th>操作</th><th>详情</th><th>IP地址</th></tr></thead><tbody>';
+            let html = '<table><thead><tr><th>时间</th><th>操作</th><th>通过原因</th><th>详情</th><th>IP地址</th></tr></thead><tbody>';
 
             pagedLogs.forEach(log => {
                 let actionText = escapeHtml(log.action);
                 let details = escapeHtml(JSON.stringify(log));
+                const matchReasonText = escapeHtml(log.matchReasonLabel || log.matchReason || '-');
 
                 switch(log.action) {
                     case 'activate':
                         actionText = '<span class="badge badge-success">密钥激活</span>';
                         details = `密钥: ${escapeHtml(log.license)}<br>设备: ${escapeHtml(log.deviceId)}`;
                         break;
+                    case 'check_task':
+                        actionText = '<span class="badge badge-primary">任务校验</span>';
+                        details = `密钥: ${escapeHtml(log.license)}<br>设备: ${escapeHtml(log.deviceId)}`;
+                        break;
                     case 'trial_activate':
                         actionText = '<span class="badge badge-warning">试用激活</span>';
-                        details = `设备: ${escapeHtml(log.deviceId)}`;
+                        details = `设备: ${escapeHtml(log.deviceId)}<br>密钥: ${escapeHtml(log.license || '-')}`;
                         break;
                     case 'trial_task':
                         actionText = '<span class="badge badge-warning">试用任务</span>';
@@ -2330,6 +2349,7 @@
                 html += `<tr>
                     <td style="white-space: nowrap;">${escapeHtml(log.timestamp)}</td>
                     <td>${actionText}</td>
+                    <td style="font-size: 11px; white-space: nowrap;">${matchReasonText}</td>
                     <td style="font-size: 11px;">${details}</td>
                     <td>${escapeHtml(log.ip || '-')}</td>
                 </tr>`;
@@ -2377,7 +2397,8 @@
             if (result.success) {
                 showToast(`密钥 ${license} 已删除`);
                 loadLicenses();
-                loadDashboard();
+                await loadLicenses();
+                await loadDashboard();
             } else {
                 showToast('删除失败：' + (result.error || '未知错误'), 'error');
             }
@@ -2696,7 +2717,8 @@
                 document.getElementById('generatedResult').style.display = 'block';
                 document.getElementById('generatedResult').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
-                loadDashboard();
+                await loadLicenses();
+                await loadDashboard();
                 showToast(`已生成 ${generatedLicensesCache.length} 个密钥`);
             } finally {
                 setButtonBusy(button, false);
@@ -2862,6 +2884,7 @@
         };
         const logActionLabelMap = {
             activate: '密钥激活',
+            check_task: '任务校验',
             trial_activate: '试用激活',
             trial_task: '试用任务',
             batch_generate: '批量生成',
@@ -2898,6 +2921,14 @@
             const start = (currentLicensesPage - 1) * licensesPageSize;
             const end = start + licensesPageSize;
             return filteredLicensesCache.slice(start, end);
+        }
+
+        function sortLicensesByCreatedDesc(licenses = []) {
+            return [...licenses].sort((a, b) => {
+                const createdDiff = (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0);
+                if (createdDiff !== 0) return createdDiff;
+                return String(b.license || '').localeCompare(String(a.license || ''));
+            });
         }
 
         function syncSelectedLicenses() {
@@ -3006,15 +3037,16 @@
             }
 
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
-            let content = '时间,动作,密钥,设备ID,IP,详情\n';
+            let content = '时间,动作,通过原因,密钥,设备ID,IP,详情\n';
             allLogs.forEach((log) => {
                 const details = [
+                    log.matchReasonLabel ? `通过:${log.matchReasonLabel}` : '',
                     log.remainingTasks ? `剩余:${log.remainingTasks}` : '',
                     log.oldTasks !== undefined ? `旧值:${log.oldTasks}` : '',
                     log.newTasks !== undefined ? `新值:${log.newTasks}` : '',
                     log.count !== undefined ? `数量:${log.count}` : ''
                 ].filter(Boolean).join(' | ');
-                content += `${log.timestamp},${getLogActionLabel(log.action)},${log.license || ''},${log.deviceId || ''},${log.ip || ''},${details}\n`;
+                content += `${log.timestamp},${getLogActionLabel(log.action)},${log.matchReasonLabel || log.matchReason || ''},${log.license || ''},${log.deviceId || ''},${log.ip || ''},${details}\n`;
             });
             createDownloadFile(`admin-logs-${timestamp}.csv`, content, 'text/csv');
             showToast(`已导出 ${allLogs.length} 条日志`);
@@ -3097,13 +3129,18 @@
 
         function summarizeRecentLog(log) {
             if (!log) return '无详情';
+            const reasonText = log.matchReasonLabel ? `（${log.matchReasonLabel}）` : '';
 
             if (log.action === 'activate') {
-                return `密钥 ${log.license || '-'} 绑定到 ${log.deviceId || '-'}`;
+                return `密钥 ${log.license || '-'} 绑定到 ${log.deviceId || '-'}${reasonText}`;
+            }
+
+            if (log.action === 'check_task') {
+                return `密钥 ${log.license || '-'} 校验通过${reasonText}`;
             }
 
             if (log.action === 'trial_task') {
-                return `设备 ${log.deviceId || '-'} 还剩 ${log.remainingTasks ?? '-'} 次`;
+                return `设备 ${log.deviceId || '-'} 还剩 ${log.remainingTasks ?? '-'} 次${reasonText}`;
             }
 
             if (log.action === 'batch_generate') {
@@ -3178,7 +3215,7 @@
                 return;
             }
 
-            allLicensesCache = result.data.licenses || [];
+            allLicensesCache = sortLicensesByCreatedDesc(result.data.licenses || []);
             syncSelectedLicenses();
             filterLicenses();
         }
@@ -3233,7 +3270,7 @@
                 });
             }
 
-            filteredLicensesCache = filtered;
+            filteredLicensesCache = sortLicensesByCreatedDesc(filtered);
             currentLicensesPage = 1;
             renderLicenses();
         }
