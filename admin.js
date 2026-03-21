@@ -806,7 +806,10 @@
 
         // 加载全局配置
         async function loadLicenses() {
-            const result = await apiRequest('listAllLicenses');
+            const [result, limitsResult] = await Promise.all([
+                apiRequest('listAllLicenses'),
+                apiRequest('getFeatureLimitsConfig')
+            ]);
             const tableEl = document.getElementById('licensesTable');
             
             if (!result.success) {
@@ -863,6 +866,11 @@
                 const hasConfig = !!lic.popupMessage;
                 const configBadge = hasConfig ? '<span class="badge badge-success">已配置</span>' : '<span class="badge badge-secondary">未配置</span>';
                 
+                const configBadgeDisplay = [
+                    (lic.popupMessage || '').trim() ? '<span class="badge badge-success">弹窗</span>' : '',
+                    limitSummary.chips
+                ].filter(Boolean).join(' ') || configBadge;
+
                 html += `<tr>
                     <td style="font-family: monospace; font-size: 11px;">${escapeHtml(lic.license)}</td>
                     <td>${periodText}</td>
@@ -872,7 +880,7 @@
                     <td>${activatedTime}</td>
                     <td>${expireDisplay}</td>
                     <td>${daysLeftBadge}</td>
-                    <td>${configBadge}</td>
+                    <td title="${escapeHtml(limitSummary.tooltip || '')}">${configBadgeDisplay}</td>
                     <td>
                         <button class="btn btn-sm btn-primary edit-license-config-btn" data-license="${encodeDataValue(lic.license)}" data-message="${encodeDataValue(lic.popupMessage || '')}">配置</button>
                         <button class="btn btn-sm btn-danger delete-license-btn" data-license="${encodeDataValue(lic.license)}">删除</button>
@@ -1522,6 +1530,7 @@
             }
             
             const data = result.data;
+            currentStatsView = { license, period, data };
             
             // 如果没有选择密钥，显示所有密钥的汇总
             if (!license) {
@@ -1687,6 +1696,62 @@
             
             html += '</tbody></table>';
             contentDiv.innerHTML = html;
+        }
+
+        function exportCurrentStatsView() {
+            const { license, period, data } = currentStatsView || {};
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+            const filename = license
+                ? `feature-usage-${license}-${period || 'total'}-${timestamp}.csv`
+                : `feature-usage-all-${period || 'total'}-${timestamp}.csv`;
+            createDownloadFile(filename, buildStatsCsvContent(data || {}, license || '', period || 'total'), 'text/csv');
+            showToast('已导出当前统计视图');
+        }
+
+        function openStatsSelectedLicenseLimits() {
+            const selectedLicense = String(currentStatsView?.license || '').trim();
+            if (!selectedLicense) {
+                showToast('请先选择一个密钥', 'error');
+                return;
+            }
+            showLicenseLimitsConfig(selectedLicense);
+        }
+
+        function openStatsSelectedLicensePopupConfig() {
+            const selectedLicense = String(currentStatsView?.license || '').trim();
+            if (!selectedLicense) {
+                showToast('请先选择一个密钥', 'error');
+                return;
+            }
+            openStatsLicenseConfig(selectedLicense);
+        }
+
+        async function resetCurrentStatsView() {
+            const selectedLicense = String(currentStatsView?.license || '').trim();
+            if (!selectedLicense) {
+                showToast('请先选择一个密钥', 'error');
+                return;
+            }
+
+            const feature = document.getElementById('statsResetFeature')?.value || '';
+            const confirmLabel = feature ? getFeatureLabel(feature) : '全部功能';
+            if (!confirm(`确定要重置密钥 ${selectedLicense} 的 ${confirmLabel} 使用统计吗？`)) {
+                return;
+            }
+
+            const resetResult = await apiRequest('resetFeatureUsageStats', {
+                license: selectedLicense,
+                feature
+            });
+
+            if (!resetResult.success) {
+                showToast('重置统计失败：' + (resetResult.error || '未知错误'), 'error');
+                return;
+            }
+
+            showToast(resetResult.message || '使用统计已重置');
+            await loadUsageStats();
+            await loadLogs();
         }
 
         async function openStatsLicenseConfig(license) {
@@ -3166,6 +3231,8 @@
         };
 
         let selectedLicenses = new Set();
+        let featureLimitsConfigCache = { global: {}, licenses: {} };
+        let currentStatsView = { license: '', period: 'total', data: {} };
         const periodLabelMap = {
             0: '永久',
             30: '30天',
@@ -3198,6 +3265,8 @@
             update_feature_config: '功能配置'
         };
 
+        logActionLabelMap.reset_feature_usage_stats = '重置使用统计';
+
         function getPeriodLabel(days) {
             return periodLabelMap[days] || `${days}天`;
         }
@@ -3208,6 +3277,99 @@
 
         function getLogActionLabel(action) {
             return logActionLabelMap[action] || action || '未知操作';
+        }
+
+        function getLicenseLimitSummary(license) {
+            const overrides = featureLimitsConfigCache?.licenses?.[license] || {};
+            const featureEntries = Object.entries(overrides);
+            const disabledFeatures = [];
+            const limitedFeatures = [];
+
+            featureEntries.forEach(([feature, config]) => {
+                if (!config || typeof config !== 'object') {
+                    return;
+                }
+
+                if (config.enabled === false) {
+                    disabledFeatures.push(getFeatureLabel(feature));
+                    return;
+                }
+
+                const limit = Number(config.limit) || 0;
+                const period = String(config.period || 'unlimited');
+                if (limit > 0 && period !== 'unlimited') {
+                    limitedFeatures.push(`${getFeatureLabel(feature)} ${limit}/${period}`);
+                }
+            });
+
+            return {
+                hasOverride: featureEntries.length > 0,
+                disabledCount: disabledFeatures.length,
+                limitedCount: limitedFeatures.length,
+                searchText: [...disabledFeatures, ...limitedFeatures].join(' '),
+                chips: [
+                    disabledFeatures.length ? `<span class="badge badge-danger">禁用 ${disabledFeatures.length}</span>` : '',
+                    limitedFeatures.length ? `<span class="badge badge-warning">限额 ${limitedFeatures.length}</span>` : '',
+                    (!disabledFeatures.length && !limitedFeatures.length && featureEntries.length)
+                        ? '<span class="badge badge-primary">已覆盖</span>'
+                        : ''
+                ].filter(Boolean).join(' '),
+                tooltip: [
+                    disabledFeatures.length ? `禁用：${disabledFeatures.join('、')}` : '',
+                    limitedFeatures.length ? `限额：${limitedFeatures.join('；')}` : ''
+                ].filter(Boolean).join('\n')
+            };
+        }
+
+        function buildStatsCsvContent(data, license, period) {
+            const selectedLicense = String(license || '').trim();
+            const features = collectStatsFeatures(data, period, Boolean(selectedLicense));
+            const rows = [];
+            const header = [selectedLicense ? '时间' : '密钥', ...features.map(getStatsFeatureLabel), '总计'];
+            rows.push(header.join(','));
+
+            if (selectedLicense) {
+                if (period === 'total') {
+                    const counts = data || {};
+                    const total = features.reduce((sum, feature) => sum + (Number(counts[feature]) || 0), 0);
+                    rows.push(['总计', ...features.map((feature) => counts[feature] || 0), total].join(','));
+                } else {
+                    const timeData = Object.entries(data || {}).sort((a, b) => b[0].localeCompare(a[0]));
+                    timeData.forEach(([time, counts]) => {
+                        const total = features.reduce((sum, feature) => sum + (Number(counts?.[feature]) || 0), 0);
+                        rows.push([time, ...features.map((feature) => counts?.[feature] || 0), total].join(','));
+                    });
+                }
+                return rows.join('\n');
+            }
+
+            const items = Object.entries(data || {}).map(([licenseKey, stats]) => {
+                let periodData = {};
+                if (period === 'total') {
+                    periodData = stats?.total || {};
+                } else if (period === 'monthly') {
+                    Object.values(stats?.monthly || {}).forEach((monthData) => {
+                        Object.entries(monthData || {}).forEach(([feature, count]) => {
+                            periodData[feature] = (periodData[feature] || 0) + count;
+                        });
+                    });
+                } else {
+                    Object.values(stats?.daily || {}).forEach((dayData) => {
+                        Object.entries(dayData || {}).forEach(([feature, count]) => {
+                            periodData[feature] = (periodData[feature] || 0) + count;
+                        });
+                    });
+                }
+
+                const total = features.reduce((sum, feature) => sum + (Number(periodData[feature]) || 0), 0);
+                return { licenseKey, total, periodData };
+            }).sort((a, b) => b.total - a.total || String(a.licenseKey).localeCompare(String(b.licenseKey)));
+
+            items.forEach(({ licenseKey, total, periodData }) => {
+                rows.push([licenseKey, ...features.map((feature) => periodData[feature] || 0), total].join(','));
+            });
+
+            return rows.join('\n');
         }
 
         function createDownloadFile(filename, content, mimeType) {
@@ -3527,6 +3689,9 @@
                 return;
             }
 
+            featureLimitsConfigCache = limitsResult.success
+                ? (limitsResult.data || { global: {}, licenses: {} })
+                : { global: {}, licenses: {} };
             allLicensesCache = sortLicensesByCreatedDesc(result.data.licenses || []);
             syncSelectedLicenses();
             filterLicenses();
@@ -3558,7 +3723,8 @@
 
             if (configFilter !== 'all') {
                 filtered = filtered.filter((license) => {
-                    const hasConfig = Boolean((license.popupMessage || '').trim());
+                    const limitSummary = getLicenseLimitSummary(license.license);
+                    const hasConfig = Boolean((license.popupMessage || '').trim()) || limitSummary.hasOverride;
                     return configFilter === 'configured' ? hasConfig : !hasConfig;
                 });
             }
@@ -3569,6 +3735,7 @@
 
             if (keyword) {
                 filtered = filtered.filter((license) => {
+                    const limitSummary = getLicenseLimitSummary(license.license);
                     const haystack = [
                         license.license,
                         license.deviceId,
@@ -3576,7 +3743,8 @@
                         license.activatedAt,
                         license.expire,
                         license.popupMessage,
-                        license.lastIP
+                        license.lastIP,
+                        limitSummary.searchText
                     ].join(' ').toLowerCase();
                     return haystack.includes(keyword);
                 });
@@ -3632,7 +3800,8 @@
                 const periodText = isPermanent ? '永久' : `${escapeHtml(lic.days)}天`;
                 const activatedTime = lic.status === 'unused' ? '-' : escapeHtml(lic.activatedAt || '-');
                 const expireDisplay = lic.status === 'unused' ? '待激活' : escapeHtml(lic.expire);
-                const hasConfig = Boolean((lic.popupMessage || '').trim());
+                const limitSummary = getLicenseLimitSummary(lic.license);
+                const hasConfig = Boolean((lic.popupMessage || '').trim()) || limitSummary.hasOverride;
                 const configBadge = hasConfig ? '<span class="badge badge-success">已配置</span>' : '<span class="badge badge-secondary">未配置</span>';
 
                 html += `<tr>
@@ -3792,4 +3961,1459 @@
             } else {
                 showToast('删除失败：' + (result.error || '未知错误'), 'error');
             }
+        }
+        function ensureLogActionFilterOptions() {
+            const select = document.getElementById('filterLogAction');
+            if (!select) return;
+
+            const options = [
+                { value: 'check_task', label: '任务校验' },
+                { value: 'set_expired', label: '设置过期' },
+                { value: 'update_feature_config', label: '功能配置' },
+                { value: 'reset_feature_usage_stats', label: '重置使用统计' }
+            ];
+
+            const existing = new Set(Array.from(select.options).map((option) => option.value));
+            options.forEach(({ value, label }) => {
+                if (existing.has(value)) return;
+                const option = document.createElement('option');
+                option.value = value;
+                option.textContent = label;
+                select.appendChild(option);
+            });
+        }
+        function focusLicenseInAdmin(license, openLimits = false) {
+            const normalizedLicense = normalizeLicenseInput(license);
+            if (!normalizedLicense) return;
+
+            if (openLimits) {
+                showTab('features');
+                const input = document.getElementById('licenseLimitsTarget');
+                if (input) input.value = normalizedLicense;
+                showLicenseLimitsConfig(normalizedLicense);
+                return;
+            }
+
+            showTab('licenses');
+            const searchInput = document.getElementById('searchLicense');
+            if (searchInput) {
+                searchInput.value = normalizedLicense;
+            }
+            filterLicenses();
+        }
+
+        function focusTrialDeviceInAdmin(deviceId) {
+            const normalizedDevice = String(deviceId || '').trim();
+            if (!normalizedDevice) return;
+
+            showTab('trial');
+            const searchInput = document.getElementById('searchTrialDevice');
+            if (searchInput) {
+                searchInput.value = normalizedDevice;
+            }
+            filterTrialDevices();
+        }
+
+        function filterLicenses() {
+            const statusFilter = document.getElementById('filterStatus')?.value || 'all';
+            const bindingFilter = document.getElementById('filterBinding')?.value || 'all';
+            const configFilter = document.getElementById('filterConfigState')?.value || 'all';
+            const daysFilter = document.getElementById('filterDays')?.value || 'all';
+            const keyword = (document.getElementById('searchLicense')?.value || '').trim().toLowerCase();
+
+            let filtered = [...allLicensesCache];
+
+            if (statusFilter !== 'all') {
+                if (statusFilter === 'expired') {
+                    filtered = filtered.filter((license) => license.isExpired);
+                } else {
+                    filtered = filtered.filter((license) => license.status === statusFilter && !license.isExpired);
+                }
+            }
+
+            if (bindingFilter !== 'all') {
+                filtered = filtered.filter((license) => {
+                    const isBound = license.deviceId && license.deviceId !== '未绑定';
+                    return bindingFilter === 'bound' ? isBound : !isBound;
+                });
+            }
+
+            if (configFilter !== 'all') {
+                filtered = filtered.filter((license) => {
+                    const limitSummary = getLicenseLimitSummary(license.license);
+                    const hasConfig = Boolean((license.popupMessage || '').trim()) || limitSummary.hasOverride;
+                    return configFilter === 'configured' ? hasConfig : !hasConfig;
+                });
+            }
+
+            if (daysFilter !== 'all') {
+                filtered = filtered.filter((license) => license.days === parseInt(daysFilter, 10));
+            }
+
+            if (keyword) {
+                filtered = filtered.filter((license) => {
+                    const limitSummary = getLicenseLimitSummary(license.license);
+                    const haystack = [
+                        license.license,
+                        license.deviceId,
+                        license.created,
+                        license.activatedAt,
+                        license.expire,
+                        license.popupMessage,
+                        license.lastIP,
+                        limitSummary.searchText
+                    ].join(' ').toLowerCase();
+                    return haystack.includes(keyword);
+                });
+            }
+
+            filteredLicensesCache = sortLicensesByCreatedDesc(filtered);
+            currentLicensesPage = 1;
+            renderLicenses();
+        }
+
+        function renderLicenses(licenses = filteredLicensesCache) {
+            const tableEl = document.getElementById('licensesTable');
+            const start = (currentLicensesPage - 1) * licensesPageSize;
+            const end = start + licensesPageSize;
+            const pagedLicenses = licenses.slice(start, end);
+            const totalPages = Math.ceil(licenses.length / licensesPageSize);
+
+            updatePageMeta(
+                'licensesMeta',
+                `共 ${allLicensesCache.length} 个密钥，筛选后 ${licenses.length} 个，已勾选 ${selectedLicenses.size} 个`
+            );
+
+            if (licenses.length === 0) {
+                tableEl.innerHTML = '<p class="empty-state">没有匹配的密钥记录</p>';
+                updateLicenseBulkActions();
+                return;
+            }
+
+            const allPagedSelected = pagedLicenses.length > 0 && pagedLicenses.every((item) => selectedLicenses.has(item.license));
+            let html = '<table><thead><tr><th><input type="checkbox" id="toggleCurrentLicenses" class="table-checkbox"' + (allPagedSelected ? ' checked' : '') + '></th><th>密钥</th><th>期限</th><th>状态</th><th>设备ID</th><th>创建时间</th><th>激活时间</th><th>过期时间</th><th>剩余天数</th><th>配置</th><th>操作</th></tr></thead><tbody>';
+
+            pagedLicenses.forEach((lic) => {
+                const now = Date.now();
+                const isPermanent = lic.days === 0;
+                const daysLeft = isPermanent ? Infinity : (lic.expireTime ? Math.ceil((lic.expireTime - now) / (1000 * 60 * 60 * 24)) : lic.days);
+                const limitSummary = getLicenseLimitSummary(lic.license);
+
+                let statusBadge = '<span class="badge badge-secondary">未知</span>';
+                if (lic.isExpired) statusBadge = '<span class="badge badge-danger">已过期</span>';
+                else if (lic.status === 'unused') statusBadge = '<span class="badge badge-success">未使用</span>';
+                else if (lic.status === 'activated') statusBadge = '<span class="badge badge-warning">已激活</span>';
+
+                let daysLeftBadge = '';
+                if (isPermanent) {
+                    daysLeftBadge = '<span class="badge badge-success">永久</span>';
+                } else if (lic.status === 'unused') {
+                    daysLeftBadge = `<span class="badge badge-success">激活后 ${escapeHtml(lic.days)} 天</span>`;
+                } else if (!lic.isExpired) {
+                    if (daysLeft <= 7) daysLeftBadge = `<span class="badge badge-danger">${escapeHtml(daysLeft)} 天</span>`;
+                    else if (daysLeft <= 30) daysLeftBadge = `<span class="badge badge-warning">${escapeHtml(daysLeft)} 天</span>`;
+                    else daysLeftBadge = `<span class="badge badge-success">${escapeHtml(daysLeft)} 天</span>`;
+                }
+
+                const periodText = isPermanent ? '永久' : `${escapeHtml(lic.days)} 天`;
+                const activatedTime = lic.status === 'unused' ? '-' : escapeHtml(lic.activatedAt || '-');
+                const expireDisplay = lic.status === 'unused' ? '待激活' : escapeHtml(lic.expire);
+                const configBadge = [
+                    (lic.popupMessage || '').trim() ? '<span class="badge badge-success">弹窗</span>' : '',
+                    limitSummary.chips
+                ].filter(Boolean).join(' ') || '<span class="badge badge-secondary">默认</span>';
+
+                html += `<tr>
+                    <td><input type="checkbox" class="table-checkbox license-row-checkbox" data-license="${encodeDataValue(lic.license)}"${selectedLicenses.has(lic.license) ? ' checked' : ''}></td>
+                    <td style="font-family: monospace; font-size: 11px;">${escapeHtml(lic.license)}</td>
+                    <td>${periodText}</td>
+                    <td>${statusBadge}</td>
+                    <td style="font-family: monospace; font-size: 10px;">${escapeHtml(lic.deviceId)}</td>
+                    <td>${escapeHtml(lic.created)}</td>
+                    <td>${activatedTime}</td>
+                    <td>${expireDisplay}</td>
+                    <td>${daysLeftBadge}</td>
+                    <td title="${escapeHtml(limitSummary.tooltip || '')}">${configBadge}</td>
+                    <td>
+                        <button class="btn btn-sm btn-secondary copy-license-btn" data-license="${encodeDataValue(lic.license)}">复制</button>
+                        <button class="btn btn-sm btn-primary edit-license-config-btn" data-license="${encodeDataValue(lic.license)}" data-message="${encodeDataValue(lic.popupMessage || '')}">配置</button>
+                        <button class="btn btn-sm btn-secondary edit-license-limits-btn" data-license="${encodeDataValue(lic.license)}">限制</button>
+                        <button class="btn btn-sm btn-danger delete-license-btn" data-license="${encodeDataValue(lic.license)}">删除</button>
+                    </td>
+                </tr>`;
+            });
+
+            html += '</tbody></table>';
+
+            if (totalPages > 1) {
+                html += '<div style="margin-top: 20px; text-align: center;">';
+                html += `<button class="btn btn-primary" onclick="changeLicensesPage(${currentLicensesPage - 1})" ${currentLicensesPage === 1 ? 'disabled' : ''}>上一页</button>`;
+                html += `<span style="margin: 0 15px;">第 ${currentLicensesPage} / ${totalPages} 页（共 ${licenses.length} 条）</span>`;
+                html += `<button class="btn btn-primary" onclick="changeLicensesPage(${currentLicensesPage + 1})" ${currentLicensesPage === totalPages ? 'disabled' : ''}>下一页</button>`;
+                html += '</div>';
+            }
+
+            tableEl.innerHTML = html;
+
+            document.getElementById('toggleCurrentLicenses')?.addEventListener('change', (event) => {
+                pagedLicenses.forEach((license) => {
+                    if (event.target.checked) selectedLicenses.add(license.license);
+                    else selectedLicenses.delete(license.license);
+                });
+                renderLicenses();
+            });
+
+            tableEl.querySelectorAll('.license-row-checkbox').forEach((checkbox) => {
+                checkbox.addEventListener('change', () => {
+                    const license = decodeDataValue(checkbox.dataset.license);
+                    if (checkbox.checked) selectedLicenses.add(license);
+                    else selectedLicenses.delete(license);
+                    updateLicenseBulkActions();
+                    const toggleCurrent = document.getElementById('toggleCurrentLicenses');
+                    if (toggleCurrent) {
+                        toggleCurrent.checked = getCurrentPagedLicenses().every((item) => selectedLicenses.has(item.license));
+                    }
+                });
+            });
+
+            tableEl.querySelectorAll('.copy-license-btn').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    copySingleLicense(decodeDataValue(btn.dataset.license));
+                });
+            });
+
+            tableEl.querySelectorAll('.edit-license-config-btn').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    editLicenseConfig(
+                        decodeDataValue(btn.dataset.license),
+                        decodeDataValue(btn.dataset.message)
+                    );
+                });
+            });
+
+            tableEl.querySelectorAll('.edit-license-limits-btn').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    showLicenseLimitsConfig(decodeDataValue(btn.dataset.license));
+                });
+            });
+
+            tableEl.querySelectorAll('.delete-license-btn').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    deleteLicense(decodeDataValue(btn.dataset.license));
+                });
+            });
+
+            updateLicenseBulkActions();
+        }
+        function renderAllLicensesStats(data, period) {
+            const contentDiv = document.getElementById('statsContent');
+            if (Object.keys(data).length === 0) {
+                contentDiv.innerHTML = '<p style="text-align: center; color: #999; padding: 40px;">暂无使用统计数据</p>';
+                return;
+            }
+
+            const features = collectStatsFeatures(data, period, false);
+            const rankedItems = Object.entries(data || {}).map(([licenseKey, stats]) => {
+                let periodData = {};
+                if (period === 'total') {
+                    periodData = stats?.total || {};
+                } else if (period === 'monthly') {
+                    Object.values(stats?.monthly || {}).forEach((monthData) => {
+                        Object.entries(monthData || {}).forEach(([feature, count]) => {
+                            periodData[feature] = (periodData[feature] || 0) + count;
+                        });
+                    });
+                } else {
+                    Object.values(stats?.daily || {}).forEach((dayData) => {
+                        Object.entries(dayData || {}).forEach(([feature, count]) => {
+                            periodData[feature] = (periodData[feature] || 0) + count;
+                        });
+                    });
+                }
+                const total = features.reduce((sum, feature) => sum + (Number(periodData[feature]) || 0), 0);
+                return { licenseKey, periodData, total };
+            }).sort((a, b) => b.total - a.total || String(a.licenseKey).localeCompare(String(b.licenseKey)));
+
+            let html = '<div class="actions" style="margin-bottom: 16px;"><button class="btn btn-secondary" onclick="exportCurrentStatsView()">导出当前视图</button></div>';
+            html += '<table><thead><tr><th>密钥</th>';
+            features.forEach((feature) => {
+                html += `<th>${getStatsFeatureLabel(feature)}</th>`;
+            });
+            html += '<th>总计</th></tr></thead><tbody>';
+
+            rankedItems.forEach(({ licenseKey, periodData, total }) => {
+                html += `<tr><td style="min-width: 280px;"><button type="button" class="stats-license-link" data-license="${encodeDataValue(licenseKey)}" title="点击配置该密钥限制" style="font-family: monospace; font-size: 11px; white-space: normal; word-break: break-all; line-height: 1.5; border: none; background: transparent; color: #2563eb; padding: 0; text-align: left; cursor: pointer;">${escapeHtml(licenseKey)}</button></td>`;
+                features.forEach((feature) => {
+                    html += `<td>${periodData[feature] || 0}</td>`;
+                });
+                html += `<td><strong>${total}</strong></td></tr>`;
+            });
+
+            html += '</tbody></table>';
+            contentDiv.innerHTML = html;
+            contentDiv.querySelectorAll('.stats-license-link').forEach((button) => {
+                button.addEventListener('click', () => {
+                    showLicenseLimitsConfig(decodeDataValue(button.dataset.license || ''));
+                });
+            });
+        }
+
+        function renderAllLicensesStats(data, period) {
+            const contentDiv = document.getElementById('statsContent');
+            const features = collectStatsFeatures(data, period, false);
+            const rankedItems = Object.entries(data || {}).map(([licenseKey, stats]) => {
+                let periodData = {};
+                if (period === 'total') {
+                    periodData = stats?.total || {};
+                } else if (period === 'monthly') {
+                    Object.values(stats?.monthly || {}).forEach((monthData) => {
+                        Object.entries(monthData || {}).forEach(([feature, count]) => {
+                            periodData[feature] = (periodData[feature] || 0) + count;
+                        });
+                    });
+                } else {
+                    Object.values(stats?.daily || {}).forEach((dayData) => {
+                        Object.entries(dayData || {}).forEach(([feature, count]) => {
+                            periodData[feature] = (periodData[feature] || 0) + count;
+                        });
+                    });
+                }
+                const total = features.reduce((sum, feature) => sum + (Number(periodData[feature]) || 0), 0);
+                return { licenseKey, periodData, total };
+            }).sort((a, b) => b.total - a.total || String(a.licenseKey).localeCompare(String(b.licenseKey)));
+
+            if (!rankedItems.length) {
+                contentDiv.innerHTML = '<p class="empty-state">暂无使用统计数据</p>';
+                return;
+            }
+
+            const totalUsage = rankedItems.reduce((sum, item) => sum + item.total, 0);
+            const activeLicenses = rankedItems.filter((item) => item.total > 0).length;
+            const topLicense = rankedItems[0]?.licenseKey || '-';
+
+            let html = buildStatsSummaryCards([
+                { label: '密钥数', value: rankedItems.length, meta: '当前视图' },
+                { label: '有使用记录', value: activeLicenses, meta: '至少 1 次' },
+                { label: '总使用次数', value: totalUsage, meta: period === 'total' ? '累计' : '当前周期汇总' },
+                { label: '最高密钥', value: topLicense, meta: `${rankedItems[0]?.total || 0} 次` }
+            ]);
+            html += '<div class="actions stats-toolbar"><button class="btn btn-secondary" onclick="exportCurrentStatsView()">导出当前视图</button></div>';
+            html += '<div class="table-shell"><table><thead><tr><th>密钥</th>';
+            features.forEach((feature) => {
+                html += `<th>${getStatsFeatureLabel(feature)}</th>`;
+            });
+            html += '<th>总计</th></tr></thead><tbody>';
+
+            rankedItems.forEach(({ licenseKey, periodData, total }) => {
+                html += `<tr><td style="min-width: 280px;"><button type="button" class="stats-license-link" data-license="${encodeDataValue(licenseKey)}" title="限制该密钥" style="font-family: monospace; font-size: 11px; white-space: normal; word-break: break-all; line-height: 1.5; border: none; background: transparent; color: #2563eb; padding: 0; text-align: left; cursor: pointer;">${escapeHtml(licenseKey)}</button></td>`;
+                features.forEach((feature) => {
+                    html += `<td>${periodData[feature] || 0}</td>`;
+                });
+                html += `<td><strong>${total}</strong></td></tr>`;
+            });
+
+            html += '</tbody></table></div>';
+            contentDiv.innerHTML = html;
+            contentDiv.querySelectorAll('.stats-license-link').forEach((button) => {
+                button.addEventListener('click', () => {
+                    showLicenseLimitsConfig(decodeDataValue(button.dataset.license || ''));
+                });
+            });
+        }
+
+        const ADMIN_BULK_LIMIT_FEATURES = ['export', 'download', 'turboDownload', 'search', 'searchResult', 'column', 'digest', 'backup'];
+        const ADMIN_TEST_CONTEXT_KEY = 'adminTestContext';
+
+        function getSelectedLicenseList() {
+            return Array.from(selectedLicenses || []);
+        }
+
+        function getAdminTestContext() {
+            try {
+                const raw = localStorage.getItem(ADMIN_TEST_CONTEXT_KEY);
+                return raw ? JSON.parse(raw) : {};
+            } catch (error) {
+                return {};
+            }
+        }
+
+        function saveAdminTestContext(context) {
+            localStorage.setItem(ADMIN_TEST_CONTEXT_KEY, JSON.stringify(context || {}));
+        }
+
+        function setAdminTestContext(patch = {}) {
+            const current = getAdminTestContext();
+            const next = {
+                license: String(patch.license ?? current.license ?? '').trim(),
+                deviceId: String(patch.deviceId ?? current.deviceId ?? '').trim()
+            };
+            saveAdminTestContext(next);
+            updateTestContextBar();
+            return next;
+        }
+
+        function ensureTestContextBar() {
+            const page = document.getElementById('page-test');
+            if (!page || document.getElementById('adminTestContextBar')) {
+                return;
+            }
+
+            const bar = document.createElement('div');
+            bar.id = 'adminTestContextBar';
+            bar.className = 'test-context-bar';
+            page.insertBefore(bar, page.firstChild);
+        }
+
+        function applyAdminTestContextToInputs(force = true) {
+            const context = getAdminTestContext();
+            const fieldMap = {
+                testLicense: context.license,
+                expireTestLicense: context.license,
+                testDeviceId: context.deviceId,
+                testTaskDeviceId: context.deviceId
+            };
+
+            Object.entries(fieldMap).forEach(([id, value]) => {
+                const input = document.getElementById(id);
+                if (!input || !value) {
+                    return;
+                }
+                if (force || !String(input.value || '').trim()) {
+                    input.value = value;
+                }
+            });
+        }
+
+        function clearAdminTestContext() {
+            localStorage.removeItem(ADMIN_TEST_CONTEXT_KEY);
+            updateTestContextBar();
+        }
+
+        function updateTestContextBar() {
+            ensureTestContextBar();
+            const bar = document.getElementById('adminTestContextBar');
+            if (!bar) {
+                return;
+            }
+
+            const context = getAdminTestContext();
+            bar.innerHTML = `
+                <div class="test-context-meta">
+                    <strong>当前测试上下文</strong>
+                    <span>密钥：${escapeHtml(context.license || '未设置')}</span>
+                    <span>设备：${escapeHtml(context.deviceId || '未设置')}</span>
+                </div>
+                <div class="test-context-actions">
+                    <button type="button" class="btn btn-secondary btn-sm" id="applyTestContextBtn">填入表单</button>
+                    <button type="button" class="btn btn-secondary btn-sm" id="clearTestContextBtn">清空上下文</button>
+                </div>
+            `;
+
+            document.getElementById('applyTestContextBtn')?.addEventListener('click', () => {
+                applyAdminTestContextToInputs(true);
+                showToast('已填入最近一次测试上下文');
+            });
+
+            document.getElementById('clearTestContextBtn')?.addEventListener('click', () => {
+                clearAdminTestContext();
+                showToast('测试上下文已清空');
+            });
+        }
+
+        function openTestToolsForLicense(license, deviceId = '') {
+            setAdminTestContext({ license, deviceId });
+            showTab('test');
+            applyAdminTestContextToInputs(true);
+        }
+
+        function ensureLicenseBulkTools() {
+            const toolbar = document.querySelector('#page-licenses .actions.page-toolbar');
+            if (!toolbar) {
+                return;
+            }
+
+            const baseButton = document.getElementById('copySelectedLicensesBtn') || toolbar.querySelector('.btn');
+            const buttonConfigs = [
+                {
+                    id: 'bulkLicenseLimitsBtn',
+                    text: '批量限制',
+                    className: 'btn btn-secondary',
+                    onClick: () => showBatchLicenseLimitsConfig()
+                },
+                {
+                    id: 'clearSelectedLicenseLimitsBtn',
+                    text: '清除限制',
+                    className: 'btn btn-secondary',
+                    onClick: () => clearSelectedLicenseLimits()
+                },
+                {
+                    id: 'expireSelectedLicensesBtn',
+                    text: '批量过期',
+                    className: 'btn btn-secondary',
+                    onClick: () => expireSelectedLicenses()
+                }
+            ];
+
+            buttonConfigs.forEach((config) => {
+                if (document.getElementById(config.id)) {
+                    return;
+                }
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.id = config.id;
+                button.className = config.className;
+                button.textContent = config.text;
+                button.addEventListener('click', config.onClick);
+                if (baseButton?.parentNode === toolbar) {
+                    toolbar.insertBefore(button, baseButton.nextSibling);
+                } else {
+                    toolbar.appendChild(button);
+                }
+            });
+        }
+
+        function closeBatchLicenseLimitsModal() {
+            document.getElementById('batchLicenseLimitsModal')?.remove();
+        }
+
+        function buildFeatureLimitOverridesFromInputs(prefix = 'lic-limit') {
+            const overrides = {};
+            ADMIN_BULK_LIMIT_FEATURES.forEach((feature) => {
+                const enabledEl = document.getElementById(`${prefix}-${feature}-enabled`);
+                const limitEl = document.getElementById(`${prefix}-${feature}-count`);
+                const periodEl = document.getElementById(`${prefix}-${feature}-period`);
+                const enabled = enabledEl ? enabledEl.checked : true;
+                const limit = parseInt(limitEl?.value || '0', 10) || 0;
+                const period = String(periodEl?.value || 'unlimited');
+
+                if (limit !== 0 || period !== 'unlimited' || enabled === false) {
+                    overrides[feature] = { enabled, limit, period };
+                }
+            });
+            return overrides;
+        }
+
+        function buildSelectedLicensePreview(licenses) {
+            const items = licenses.slice(0, 4).map((license) => `<code>${escapeHtml(license)}</code>`);
+            if (licenses.length > 4) {
+                items.push(`<span>+${licenses.length - 4} 个</span>`);
+            }
+            return items.join('');
+        }
+
+        async function showBatchLicenseLimitsConfig() {
+            const licenses = getSelectedLicenseList();
+            if (!licenses.length) {
+                showToast('请先勾选要批量限制的密钥', 'error');
+                return;
+            }
+
+            const result = await apiRequest('getFeatureLimitsConfig');
+            if (!result.success) {
+                showToast('加载限制配置失败：' + (result.error || '未知错误'), 'error');
+                return;
+            }
+
+            closeLicenseLimitsModal();
+            closeBatchLicenseLimitsModal();
+
+            const globalConfig = result.data?.global || {};
+            const modalHtml = `
+                <div id="batchLicenseLimitsModal" style="position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); display: flex; align-items: center; justify-content: center; z-index: 10000;">
+                    <div style="background: white; border-radius: 16px; padding: 28px; width: min(860px, 94vw); max-height: 90vh; overflow-y: auto; box-shadow: 0 24px 80px rgba(15, 23, 42, 0.28);">
+                        <h2 style="margin-bottom: 10px;">批量应用功能限制</h2>
+                        <p style="color: #64748b; margin-bottom: 8px;">会统一覆盖所选 <strong>${licenses.length}</strong> 个密钥的单密钥限制。</p>
+                        <div class="selection-preview">${buildSelectedLicensePreview(licenses)}</div>
+                        <p style="color: #64748b; margin: 14px 0 20px;">留空、0 或“不限”表示恢复为全局配置。</p>
+                        <div style="display: grid; gap: 16px;">
+                            ${createLicenseFeatureLimitRow('export', '帖子导出', globalConfig.export, {})}
+                            ${createLicenseFeatureLimitRow('download', '文件下载', globalConfig.download, {})}
+                            ${createLicenseFeatureLimitRow('turboDownload', '极速下载', globalConfig.turboDownload, {})}
+                            ${createLicenseFeatureLimitRow('search', '关键词搜索', globalConfig.search, {})}
+                            ${createLicenseFeatureLimitRow('searchResult', '搜索结果导出', globalConfig.searchResult, {})}
+                            ${createLicenseFeatureLimitRow('column', '专栏导出', globalConfig.column, {})}
+                            ${createLicenseFeatureLimitRow('digest', '精华导出', globalConfig.digest, {})}
+                            ${createLicenseFeatureLimitRow('backup', '全量备份', globalConfig.backup, {})}
+                        </div>
+                        <div style="margin-top: 24px; display: flex; justify-content: flex-end; gap: 10px;">
+                            <button type="button" class="btn btn-secondary" onclick="closeBatchLicenseLimitsModal()">取消</button>
+                            <button type="button" class="btn btn-primary" id="saveBatchLicenseLimitsBtn">保存批量限制</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            document.getElementById('saveBatchLicenseLimitsBtn')?.addEventListener('click', () => {
+                saveBatchLicenseLimits();
+            });
+        }
+
+        async function saveBatchLicenseLimits() {
+            const licenses = getSelectedLicenseList();
+            if (!licenses.length) {
+                showToast('当前没有选中的密钥', 'error');
+                closeBatchLicenseLimitsModal();
+                return;
+            }
+
+            const button = document.getElementById('saveBatchLicenseLimitsBtn');
+            setButtonBusy(button, true, '保存中...');
+
+            try {
+                const currentResult = await apiRequest('getFeatureLimitsConfig');
+                if (!currentResult.success) {
+                    showToast('加载限制配置失败：' + (currentResult.error || '未知错误'), 'error');
+                    return;
+                }
+
+                const config = currentResult.data || { global: {}, licenses: {} };
+                config.licenses = config.licenses || {};
+                const overrides = buildFeatureLimitOverridesFromInputs('lic-limit');
+
+                licenses.forEach((license) => {
+                    if (Object.keys(overrides).length === 0) {
+                        delete config.licenses[license];
+                    } else {
+                        config.licenses[license] = JSON.parse(JSON.stringify(overrides));
+                    }
+                });
+
+                const result = await apiRequest('updateFeatureLimitsConfig', { config });
+                if (!result.success) {
+                    showToast('保存批量限制失败：' + (result.error || '未知错误'), 'error');
+                    return;
+                }
+
+                featureLimitsConfigCache = config;
+                closeBatchLicenseLimitsModal();
+                showToast(`已为 ${licenses.length} 个密钥更新功能限制`);
+                await loadLicenses();
+                await loadDashboard();
+            } finally {
+                setButtonBusy(button, false);
+            }
+        }
+
+        async function clearSelectedLicenseLimits() {
+            const licenses = getSelectedLicenseList();
+            if (!licenses.length) {
+                showToast('请先勾选要清除限制的密钥', 'error');
+                return;
+            }
+
+            if (!confirm(`确定清除这 ${licenses.length} 个密钥的单独功能限制吗？`)) {
+                return;
+            }
+
+            const button = document.getElementById('clearSelectedLicenseLimitsBtn');
+            setButtonBusy(button, true, '清除中...');
+
+            try {
+                const currentResult = await apiRequest('getFeatureLimitsConfig');
+                if (!currentResult.success) {
+                    showToast('加载限制配置失败：' + (currentResult.error || '未知错误'), 'error');
+                    return;
+                }
+
+                const config = currentResult.data || { global: {}, licenses: {} };
+                config.licenses = config.licenses || {};
+                licenses.forEach((license) => {
+                    delete config.licenses[license];
+                });
+
+                const result = await apiRequest('updateFeatureLimitsConfig', { config });
+                if (!result.success) {
+                    showToast('清除限制失败：' + (result.error || '未知错误'), 'error');
+                    return;
+                }
+
+                featureLimitsConfigCache = config;
+                showToast(`已清除 ${licenses.length} 个密钥的单独限制`);
+                await loadLicenses();
+                await loadDashboard();
+            } finally {
+                setButtonBusy(button, false);
+            }
+        }
+
+        async function expireSelectedLicenses() {
+            const licenses = getSelectedLicenseList();
+            if (!licenses.length) {
+                showToast('请先勾选要设置过期的密钥', 'error');
+                return;
+            }
+
+            if (!confirm(`确定将选中的 ${licenses.length} 个密钥全部设为过期吗？`)) {
+                return;
+            }
+
+            const button = document.getElementById('expireSelectedLicensesBtn');
+            setButtonBusy(button, true, '处理中...');
+
+            let successCount = 0;
+            try {
+                for (const license of licenses) {
+                    const result = await apiRequest('setLicenseExpired', { license });
+                    if (result.success) {
+                        successCount += 1;
+                    }
+                }
+
+                if (!successCount) {
+                    showToast('没有密钥被成功设置为过期', 'error');
+                    return;
+                }
+
+                showToast(`已将 ${successCount} 个密钥设为过期`);
+                await loadLicenses();
+                await loadDashboard();
+                await loadLogs();
+            } finally {
+                setButtonBusy(button, false);
+            }
+        }
+
+        function buildStatsSummaryCards(items = []) {
+            return `
+                <div class="summary-card-grid">
+                    ${items.map((item) => `
+                        <div class="summary-card">
+                            <span class="summary-label">${escapeHtml(item.label)}</span>
+                            <strong class="summary-value">${escapeHtml(item.value)}</strong>
+                            ${item.meta ? `<small class="summary-meta">${escapeHtml(item.meta)}</small>` : ''}
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        async function openUsageStatsForLicense(license, period = 'total') {
+            const targetLicense = String(license || '').trim();
+            if (!targetLicense) {
+                return;
+            }
+
+            showTab('stats');
+            await initStatsPage();
+            const licenseSelect = document.getElementById('statsLicenseFilter');
+            const periodSelect = document.getElementById('statsPeriodFilter');
+            if (licenseSelect) {
+                licenseSelect.value = targetLicense;
+            }
+            if (periodSelect && period) {
+                periodSelect.value = period;
+            }
+            await loadUsageStats();
+        }
+
+        function ensureDashboardPanels() {
+            const grid = document.querySelector('#page-dashboard .dashboard-grid');
+            if (!grid) {
+                return;
+            }
+
+            const panels = [
+                { id: 'dashboardExpiringPanel', title: '即将到期', contentId: 'dashboardExpiring' },
+                { id: 'dashboardTopUsagePanel', title: '高频使用密钥', contentId: 'dashboardTopUsage' }
+            ];
+
+            panels.forEach((panel) => {
+                if (document.getElementById(panel.id)) {
+                    return;
+                }
+                const wrapper = document.createElement('div');
+                wrapper.className = 'dashboard-panel';
+                wrapper.id = panel.id;
+                wrapper.innerHTML = `<h3>${panel.title}</h3><div id="${panel.contentId}" class="dashboard-stack"><p class="empty-state">正在加载...</p></div>`;
+                grid.appendChild(wrapper);
+            });
+        }
+
+        function attachDashboardActionHandlers(container) {
+            container?.querySelectorAll('.dashboard-license-action').forEach((button) => {
+                button.addEventListener('click', async () => {
+                    const license = decodeDataValue(button.dataset.license || '');
+                    const deviceId = decodeDataValue(button.dataset.deviceId || '');
+                    const action = button.dataset.action || '';
+                    if (action === 'stats') {
+                        await openUsageStatsForLicense(license, button.dataset.period || 'total');
+                        return;
+                    }
+                    if (action === 'limit') {
+                        showLicenseLimitsConfig(license);
+                        return;
+                    }
+                    if (action === 'test') {
+                        openTestToolsForLicense(license, deviceId);
+                    }
+                });
+            });
+        }
+
+        function renderDashboardWatchlists(overview) {
+            ensureDashboardPanels();
+
+            const expiringSoon = overview.watchlist?.expiringSoon || [];
+            const topUsageLicenses = overview.watchlist?.topUsageLicenses || [];
+            const expiringEl = document.getElementById('dashboardExpiring');
+            const usageEl = document.getElementById('dashboardTopUsage');
+
+            if (expiringEl) {
+                expiringEl.innerHTML = expiringSoon.length
+                    ? `<div class="dashboard-list">${expiringSoon.map((item) => `
+                        <div class="dashboard-list-item">
+                            <div>
+                                <strong>${escapeHtml(item.license)}</strong>
+                                <small>${escapeHtml(item.expireDate)} · 剩余 ${escapeHtml(item.daysLeft)} 天${item.deviceId ? ` · 设备 ${escapeHtml(item.deviceId)}` : ''}</small>
+                            </div>
+                            <div class="dashboard-item-actions">
+                                <button type="button" class="action-link dashboard-license-action" data-action="limit" data-license="${encodeDataValue(item.license)}">限制</button>
+                                <button type="button" class="action-link dashboard-license-action" data-action="stats" data-period="total" data-license="${encodeDataValue(item.license)}">统计</button>
+                                <button type="button" class="action-link dashboard-license-action" data-action="test" data-license="${encodeDataValue(item.license)}" data-device-id="${encodeDataValue(item.deviceId || '')}">测试</button>
+                            </div>
+                        </div>
+                    `).join('')}</div>`
+                    : '<p class="empty-state">未来 7 天内没有即将到期的密钥</p>';
+                attachDashboardActionHandlers(expiringEl);
+            }
+
+            if (usageEl) {
+                usageEl.innerHTML = topUsageLicenses.length
+                    ? `<div class="dashboard-list">${topUsageLicenses.map((item) => `
+                        <div class="dashboard-list-item">
+                            <div>
+                                <strong>${escapeHtml(item.license)}</strong>
+                                <small>总使用 ${escapeHtml(item.total)} 次${item.topFeature ? ` · 最高 ${escapeHtml(getFeatureLabel(item.topFeature))} ${escapeHtml(item.topFeatureCount)} 次` : ''}</small>
+                            </div>
+                            <div class="dashboard-item-actions">
+                                <button type="button" class="action-link dashboard-license-action" data-action="limit" data-license="${encodeDataValue(item.license)}">限制</button>
+                                <button type="button" class="action-link dashboard-license-action" data-action="stats" data-period="total" data-license="${encodeDataValue(item.license)}">统计</button>
+                                <button type="button" class="action-link dashboard-license-action" data-action="test" data-license="${encodeDataValue(item.license)}">测试</button>
+                            </div>
+                        </div>
+                    `).join('')}</div>`
+                    : '<p class="empty-state">暂时没有高频使用密钥</p>';
+                attachDashboardActionHandlers(usageEl);
+            }
+        }
+
+        function renderDashboardHealth(overview) {
+            const system = overview.system || {};
+            const config = overview.config || {};
+            const features = overview.features || {};
+            const watchlist = overview.watchlist || {};
+            const healthEl = document.getElementById('dashboardHealth');
+            if (!healthEl) {
+                return;
+            }
+
+            const purchaseDomain = config.purchaseUrl ? (() => {
+                try {
+                    return new URL(config.purchaseUrl).host;
+                } catch (error) {
+                    return config.purchaseUrl;
+                }
+            })() : '未配置';
+
+            healthEl.innerHTML = `
+                <div class="dashboard-inline-list">
+                    <span class="status-chip ${system.cosConfigured ? 'ok' : 'warn'}">${system.cosConfigured ? 'COS 已连接' : '内存模式'}</span>
+                    <span class="status-chip ${system.adminLoginConfigured ? 'ok' : 'warn'}">${system.adminLoginConfigured ? '后台登录已配置' : '后台登录未配置'}</span>
+                    <span class="status-chip ${features.disabledCount > 0 ? 'warn' : 'ok'}">${features.disabledCount > 0 ? `已禁用 ${features.disabledCount} 项功能` : '功能全开'}</span>
+                    <span class="status-chip ${features.limitedCount > 0 ? 'info' : 'ok'}">${features.limitedCount > 0 ? `有限制 ${features.limitedCount} 项` : '全局无限制'}</span>
+                    <span class="status-chip ${watchlist.expiringSoonCount > 0 ? 'warn' : 'ok'}">${watchlist.expiringSoonCount > 0 ? `7天内到期 ${watchlist.expiringSoonCount} 个` : '近期无到期'}</span>
+                </div>
+                <div class="dashboard-list">
+                    <div class="dashboard-list-item">
+                        <div>
+                            <strong>默认试用次数</strong>
+                            <small>新用户首轮试用可用次数</small>
+                        </div>
+                        <span>${escapeHtml(config.defaultTrialTasks)} 次</span>
+                    </div>
+                    <div class="dashboard-list-item">
+                        <div>
+                            <strong>购买链接</strong>
+                            <small>${escapeHtml(purchaseDomain)}</small>
+                        </div>
+                        <div class="dashboard-item-actions">
+                            <span>${config.purchaseUrl ? '已配置' : '未配置'}</span>
+                            <button type="button" class="action-link" onclick="showTab('config')">去配置</button>
+                        </div>
+                    </div>
+                    <div class="dashboard-list-item">
+                        <div>
+                            <strong>全局弹窗</strong>
+                            <small>${config.globalPopupMessage ? '当前已有内容' : '当前为空'}</small>
+                        </div>
+                        <div class="dashboard-item-actions">
+                            <span>${config.globalPopupMessage ? '已开启' : '未设置'}</span>
+                            <button type="button" class="action-link" onclick="showTab('config')">去编辑</button>
+                        </div>
+                    </div>
+                    <div class="dashboard-list-item">
+                        <div>
+                            <strong>单密钥覆盖</strong>
+                            <small>已配置单独功能限制的密钥数量</small>
+                        </div>
+                        <div class="dashboard-item-actions">
+                            <span>${escapeHtml(features.licenseOverrideCount || 0)} 个</span>
+                            <button type="button" class="action-link" onclick="showTab('licenses')">查看密钥</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function loadDashboard() {
+            const refreshBtn = document.getElementById('dashboardRefreshBtn');
+            setButtonBusy(refreshBtn, true, '刷新中...');
+
+            try {
+                const result = await apiRequest('getAdminOverview');
+                if (!result.success) {
+                    updatePageMeta('dashboardMeta', '仪表盘概览加载失败');
+                    showToast('加载仪表盘失败：' + (result.error || '未知错误'), 'error');
+                    return;
+                }
+
+                const overview = result.data || {};
+                const stats = overview.stats || {};
+                document.getElementById('totalLicenses').textContent = stats.totalLicenses || 0;
+                document.getElementById('activeLicenses').textContent = stats.activeLicenses || 0;
+                document.getElementById('boundDevices').textContent = stats.boundDevices || 0;
+                document.getElementById('trialDevices').textContent = stats.trialDevices || 0;
+
+                updatePageMeta(
+                    'dashboardMeta',
+                    `存储：${String(overview.system?.storageMode || '').toUpperCase()} · 服务器时间：${overview.system?.serverTime || '-'} · 7天内到期：${overview.watchlist?.expiringSoonCount || 0} 个`
+                );
+                renderDashboardHealth(overview);
+                renderDashboardPeriods(overview);
+                renderDashboardRecentLogs(overview);
+                renderDashboardWatchlists(overview);
+            } finally {
+                setButtonBusy(refreshBtn, false);
+            }
+        }
+
+        async function loadLicenses() {
+            ensureLicenseBulkTools();
+            const tableEl = document.getElementById('licensesTable');
+            const [result, limitsResult] = await Promise.all([
+                apiRequest('listAllLicenses'),
+                apiRequest('getFeatureLimitsConfig')
+            ]);
+
+            if (!result.success) {
+                tableEl.innerHTML = '<p>加载失败：' + escapeHtml(result.error || '未知错误') + '</p>';
+                updatePageMeta('licensesMeta', '加载密钥数据失败');
+                updateLicenseBulkActions();
+                return;
+            }
+
+            featureLimitsConfigCache = limitsResult.success
+                ? (limitsResult.data || { global: {}, licenses: {} })
+                : { global: {}, licenses: {} };
+            allLicensesCache = sortLicensesByCreatedDesc(result.data.licenses || []);
+            syncSelectedLicenses();
+            filterLicenses();
+        }
+
+        function updateLicenseBulkActions() {
+            ensureLicenseBulkTools();
+
+            const count = selectedLicenses.size;
+            const buttonConfigs = [
+                { id: 'copySelectedLicensesBtn', idle: '复制选中', active: `复制选中 (${count})` },
+                { id: 'bulkLicenseLimitsBtn', idle: '批量限制', active: `批量限制 (${count})` },
+                { id: 'clearSelectedLicenseLimitsBtn', idle: '清除限制', active: `清除限制 (${count})` },
+                { id: 'expireSelectedLicensesBtn', idle: '批量过期', active: `批量过期 (${count})` },
+                { id: 'deleteSelectedLicensesBtn', idle: '删除选中', active: `删除选中 (${count})` }
+            ];
+
+            buttonConfigs.forEach((config) => {
+                const button = document.getElementById(config.id);
+                if (!button) {
+                    return;
+                }
+                button.disabled = count === 0;
+                button.textContent = count > 0 ? config.active : config.idle;
+            });
+        }
+
+        async function testActivate() {
+            const license = document.getElementById('testLicense').value.trim();
+            const deviceId = document.getElementById('testDeviceId').value.trim()
+                || ('test-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10));
+            const resultDiv = document.getElementById('testActivateResult');
+
+            if (!license) {
+                resultDiv.innerHTML = '<div class="alert alert-error">请输入密钥</div>';
+                return;
+            }
+
+            resultDiv.innerHTML = '<div class="alert alert-info">测试中...</div>';
+            const result = await apiRequest('activate', { license, deviceId });
+
+            if (!result.success) {
+                resultDiv.innerHTML = `<div class="alert alert-error"><h4>激活失败</h4><p>${escapeHtml(result.message || result.error || '未知错误')}</p></div>`;
+                return;
+            }
+
+            setAdminTestContext({ license, deviceId });
+            const data = result.data || {};
+            let html = '<div class="alert alert-success">';
+            html += '<h4>激活成功</h4>';
+            html += '<table class="info-table">';
+            html += `<tr><td>状态</td><td><strong>${data.status === 'trial' ? '试用' : '正式授权'}</strong></td></tr>`;
+            html += `<tr><td>密钥</td><td><code>${escapeHtml(license)}</code></td></tr>`;
+            html += `<tr><td>设备ID</td><td><code>${escapeHtml(deviceId)}</code></td></tr>`;
+
+            if (data.status === 'trial') {
+                html += `<tr><td>剩余次数</td><td><strong>${escapeHtml(data.remainingTasks)}</strong> 次</td></tr>`;
+            } else {
+                html += `<tr><td>是否永久</td><td>${data.isPermanent ? '是' : '否'}</td></tr>`;
+                if (!data.isPermanent && data.expireDate) {
+                    html += `<tr><td>到期日期</td><td><strong>${escapeHtml(data.expireDate)}</strong></td></tr>`;
+                }
+                html += `<tr><td>无限制</td><td>${data.unlimited ? '是' : '否'}</td></tr>`;
+            }
+
+            html += '</table>';
+            html += '<div style="margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap;">';
+            html += '<button type="button" class="btn btn-secondary btn-sm" id="testActivateReuseBtn">填入后续测试</button>';
+            html += '<button type="button" class="btn btn-secondary btn-sm" id="testActivateOpenTaskBtn">继续测任务权限</button>';
+            html += '</div></div>';
+            resultDiv.innerHTML = html;
+
+            document.getElementById('testActivateReuseBtn')?.addEventListener('click', () => {
+                applyAdminTestContextToInputs(true);
+                showToast('已将激活结果带入其他测试表单');
+            });
+
+            document.getElementById('testActivateOpenTaskBtn')?.addEventListener('click', () => {
+                applyAdminTestContextToInputs(true);
+                const testTaskDeviceId = document.getElementById('testTaskDeviceId');
+                if (testTaskDeviceId) {
+                    testTaskDeviceId.value = deviceId;
+                    testTaskDeviceId.focus();
+                }
+            });
+        }
+
+        async function testTaskPermission() {
+            const deviceId = document.getElementById('testTaskDeviceId').value.trim();
+            const feature = document.getElementById('testTaskFeature')?.value.trim() || '';
+            const resultDiv = document.getElementById('testTaskResult');
+
+            if (!deviceId) {
+                resultDiv.innerHTML = '<div class="alert alert-error">请输入设备ID</div>';
+                return;
+            }
+
+            resultDiv.innerHTML = '<div class="alert alert-info">测试中...</div>';
+            const payload = { deviceId };
+            if (feature) {
+                payload.feature = feature;
+            }
+
+            const result = await apiRequest('checkTask', payload);
+            setAdminTestContext({ deviceId });
+
+            if (result.success) {
+                const data = result.data || {};
+                let html = '<div class="alert alert-success">';
+                html += '<h4>允许执行任务</h4>';
+                html += '<table class="info-table">';
+                html += `<tr><td>状态</td><td><strong>${data.status === 'trial' ? '试用' : '正式授权'}</strong></td></tr>`;
+                html += `<tr><td>测试功能</td><td>${escapeHtml(feature || '通用校验')}</td></tr>`;
+                if (data.status === 'trial') {
+                    html += `<tr><td>剩余次数</td><td><strong>${escapeHtml(data.remainingTasks)}</strong> 次</td></tr>`;
+                } else {
+                    html += `<tr><td>是否永久</td><td>${data.isPermanent ? '是' : '否'}</td></tr>`;
+                    html += `<tr><td>无限制</td><td>${data.unlimited ? '是' : '否'}</td></tr>`;
+                }
+                html += '</table></div>';
+                resultDiv.innerHTML = html;
+            } else {
+                resultDiv.innerHTML = `<div class="alert alert-error"><h4>权限校验失败</h4><p>${escapeHtml(result.message || result.error || '未知错误')}</p></div>`;
+            }
+        }
+
+        function renderAllLicensesStats(data, period) {
+            const contentDiv = document.getElementById('statsContent');
+            const features = collectStatsFeatures(data, period, false);
+            const rankedItems = Object.entries(data || {}).map(([licenseKey, stats]) => {
+                let periodData = {};
+                if (period === 'total') {
+                    periodData = stats?.total || {};
+                } else if (period === 'monthly') {
+                    Object.values(stats?.monthly || {}).forEach((monthData) => {
+                        Object.entries(monthData || {}).forEach(([feature, count]) => {
+                            periodData[feature] = (periodData[feature] || 0) + count;
+                        });
+                    });
+                } else {
+                    Object.values(stats?.daily || {}).forEach((dayData) => {
+                        Object.entries(dayData || {}).forEach(([feature, count]) => {
+                            periodData[feature] = (periodData[feature] || 0) + count;
+                        });
+                    });
+                }
+                const total = features.reduce((sum, feature) => sum + (Number(periodData[feature]) || 0), 0);
+                return { licenseKey, periodData, total };
+            }).sort((a, b) => b.total - a.total || String(a.licenseKey).localeCompare(String(b.licenseKey)));
+
+            if (!rankedItems.length) {
+                contentDiv.innerHTML = '<p class="empty-state">暂无使用统计数据</p>';
+                return;
+            }
+
+            const totalUsage = rankedItems.reduce((sum, item) => sum + item.total, 0);
+            const activeLicenses = rankedItems.filter((item) => item.total > 0).length;
+            const topLicense = rankedItems[0]?.licenseKey || '-';
+
+            let html = buildStatsSummaryCards([
+                { label: '密钥数', value: rankedItems.length, meta: '当前视图' },
+                { label: '有使用记录', value: activeLicenses, meta: '至少 1 次' },
+                { label: '总使用次数', value: totalUsage, meta: period === 'total' ? '累计' : '当前周期汇总' },
+                { label: '最高密钥', value: topLicense, meta: `${rankedItems[0]?.total || 0} 次` }
+            ]);
+            html += '<div class="actions stats-toolbar"><button class="btn btn-secondary" onclick="exportCurrentStatsView()">导出当前视图</button></div>';
+            html += '<div class="table-shell"><table><thead><tr><th>密钥</th>';
+            features.forEach((feature) => {
+                html += `<th>${getStatsFeatureLabel(feature)}</th>`;
+            });
+            html += '<th>总计</th></tr></thead><tbody>';
+
+            rankedItems.forEach(({ licenseKey, periodData, total }) => {
+                html += `<tr><td style="min-width: 280px;"><button type="button" class="stats-license-link" data-license="${encodeDataValue(licenseKey)}" title="限制该密钥" style="font-family: monospace; font-size: 11px; white-space: normal; word-break: break-all; line-height: 1.5; border: none; background: transparent; color: #2563eb; padding: 0; text-align: left; cursor: pointer;">${escapeHtml(licenseKey)}</button></td>`;
+                features.forEach((feature) => {
+                    html += `<td>${periodData[feature] || 0}</td>`;
+                });
+                html += `<td><strong>${total}</strong></td></tr>`;
+            });
+
+            html += '</tbody></table></div>';
+            contentDiv.innerHTML = html;
+            contentDiv.querySelectorAll('.stats-license-link').forEach((button) => {
+                button.addEventListener('click', () => {
+                    showLicenseLimitsConfig(decodeDataValue(button.dataset.license || ''));
+                });
+            });
+        }
+
+        function renderSingleLicenseStats(data, license, period) {
+            const contentDiv = document.getElementById('statsContent');
+            const features = collectStatsFeatures(data, period, true);
+            const aggregate = {};
+
+            if (period === 'total') {
+                Object.entries(data || {}).forEach(([feature, count]) => {
+                    aggregate[feature] = Number(count) || 0;
+                });
+            } else {
+                Object.values(data || {}).forEach((counts) => {
+                    Object.entries(counts || {}).forEach(([feature, count]) => {
+                        aggregate[feature] = (aggregate[feature] || 0) + (Number(count) || 0);
+                    });
+                });
+            }
+
+            const totalUsage = Object.values(aggregate).reduce((sum, count) => sum + (Number(count) || 0), 0);
+            const rankedFeature = Object.entries(aggregate)
+                .map(([feature, count]) => ({ feature, count: Number(count) || 0 }))
+                .sort((a, b) => b.count - a.count || String(a.feature).localeCompare(String(b.feature)))[0];
+            const rowCount = period === 'total' ? 1 : Object.keys(data || {}).length;
+
+            let html = buildStatsSummaryCards([
+                { label: '当前密钥', value: license, meta: '统计对象' },
+                { label: '总使用次数', value: totalUsage, meta: period === 'total' ? '累计' : '当前周期汇总' },
+                { label: '时间切片', value: rowCount, meta: period === 'daily' ? '按天' : period === 'monthly' ? '按月' : '总计' },
+                { label: '最高功能', value: rankedFeature ? getFeatureLabel(rankedFeature.feature) : '无', meta: rankedFeature ? `${rankedFeature.count} 次` : '' }
+            ]);
+            html += `
+                <div class="actions stats-toolbar">
+                    <button class="btn btn-secondary" onclick="openStatsSelectedLicenseLimits()">限制功能</button>
+                    <button class="btn btn-secondary" onclick="openStatsSelectedLicensePopupConfig()">编辑弹窗</button>
+                    <button class="btn btn-secondary" onclick="openTestToolsForLicense('${escapeHtml(license)}')">带入测试</button>
+                    <select id="statsResetFeature" class="form-control" style="width: 220px;">
+                        <option value="">全部功能</option>
+                        ${features.map((feature) => `<option value="${escapeHtml(feature)}">${escapeHtml(getFeatureLabel(feature))}</option>`).join('')}
+                    </select>
+                    <button class="btn btn-danger" onclick="resetCurrentStatsView()">重置统计</button>
+                    <button class="btn btn-secondary" onclick="exportCurrentStatsView()">导出当前视图</button>
+                </div>
+            `;
+            html += '<div class="table-shell"><table><thead><tr><th>时间</th>';
+            features.forEach((feature) => {
+                html += `<th>${getStatsFeatureLabel(feature)}</th>`;
+            });
+            html += '<th>总计</th></tr></thead><tbody>';
+
+            if (period === 'total') {
+                html += '<tr><td><strong>总计</strong></td>';
+                let total = 0;
+                features.forEach((feature) => {
+                    const count = data[feature] || 0;
+                    total += count;
+                    html += `<td>${count}</td>`;
+                });
+                html += `<td><strong>${total}</strong></td></tr>`;
+            } else {
+                const timeData = Object.entries(data || {}).sort((a, b) => b[0].localeCompare(a[0]));
+                if (!timeData.length) {
+                    html += `<tr><td colspan="${features.length + 2}" class="empty-state">暂无统计数据</td></tr>`;
+                } else {
+                    timeData.forEach(([time, counts]) => {
+                        html += `<tr><td>${escapeHtml(time)}</td>`;
+                        let total = 0;
+                        features.forEach((feature) => {
+                            const count = counts[feature] || 0;
+                            total += count;
+                            html += `<td>${count}</td>`;
+                        });
+                        html += `<td><strong>${total}</strong></td></tr>`;
+                    });
+                }
+            }
+
+            html += '</tbody></table></div>';
+            contentDiv.innerHTML = html;
+            const statsResetFeature = document.getElementById('statsResetFeature');
+            if (statsResetFeature) {
+                statsResetFeature.value = '';
+            }
+        }
+
+        ensureTestContextBar();
+        updateTestContextBar();
+
+        function renderSingleLicenseStats(data, license, period) {
+            const contentDiv = document.getElementById('statsContent');
+            const features = collectStatsFeatures(data, period, true);
+            const columnCount = features.length + 2;
+            let html = `
+                <div class="actions" style="margin-bottom: 16px; align-items: center;">
+                    <button class="btn btn-secondary" onclick="openStatsSelectedLicenseLimits()">限制功能</button>
+                    <button class="btn btn-secondary" onclick="openStatsSelectedLicensePopupConfig()">编辑弹窗</button>
+                    <select id="statsResetFeature" class="form-control" style="width: 220px;">
+                        <option value="">全部功能</option>
+                        ${Object.entries(featureLabelMap).map(([feature, label]) => `<option value="${feature}">${escapeHtml(label)}</option>`).join('')}
+                    </select>
+                    <button class="btn btn-danger" onclick="resetCurrentStatsView()">重置统计</button>
+                    <button class="btn btn-secondary" onclick="exportCurrentStatsView()">导出当前视图</button>
+                </div>
+                <table><thead><tr><th>时间</th>
+            `;
+
+            features.forEach((feature) => {
+                html += `<th>${getStatsFeatureLabel(feature)}</th>`;
+            });
+            html += '<th>总计</th></tr></thead><tbody>';
+
+            if (period === 'total') {
+                let total = 0;
+                html += '<tr><td><strong>总计</strong></td>';
+                features.forEach((feature) => {
+                    const count = data?.[feature] || 0;
+                    total += count;
+                    html += `<td>${count}</td>`;
+                });
+                html += `<td><strong>${total}</strong></td></tr>`;
+            } else {
+                const timeData = Object.entries(data || {}).sort((a, b) => b[0].localeCompare(a[0]));
+                if (timeData.length === 0) {
+                    html += `<tr><td colspan="${columnCount}" style="text-align: center; color: #999;">暂无数据</td></tr>`;
+                } else {
+                    timeData.forEach(([time, counts]) => {
+                        let total = 0;
+                        html += `<tr><td>${time}</td>`;
+                        features.forEach((feature) => {
+                            const count = counts?.[feature] || 0;
+                            total += count;
+                            html += `<td>${count}</td>`;
+                        });
+                        html += `<td><strong>${total}</strong></td></tr>`;
+                    });
+                }
+            }
+
+            html += '</tbody></table>';
+            contentDiv.innerHTML = html;
+            const statsResetFeature = document.getElementById('statsResetFeature');
+            if (statsResetFeature) {
+                statsResetFeature.value = '';
+            }
+        }
+
+        function renderLogs(logs = allLogs) {
+            ensureLogActionFilterOptions();
+
+            const tableEl = document.getElementById('logsTable');
+            const start = (currentLogsPage - 1) * logsPageSize;
+            const end = start + logsPageSize;
+            const pagedLogs = logs.slice(start, end);
+            const totalPages = Math.ceil(logs.length / logsPageSize);
+
+            updatePageMeta('logsMeta', `共 ${allLogsRaw.length} 条日志，筛选后 ${logs.length} 条`);
+
+            if (!logs.length) {
+                tableEl.innerHTML = '<p class="empty-state">没有匹配的日志记录</p>';
+                return;
+            }
+
+            let html = '<table><thead><tr><th>时间</th><th>操作</th><th>原因</th><th>详情</th><th>IP</th></tr></thead><tbody>';
+
+            const renderLicenseLink = (license, openLimits = false) => {
+                if (!license) return '-';
+                return `<button type="button" class="log-license-link" data-license="${encodeDataValue(license)}" data-open-limits="${openLimits ? '1' : '0'}" style="border:none;background:transparent;color:#2563eb;padding:0;cursor:pointer;font:inherit;">${escapeHtml(license)}</button>`;
+            };
+
+            const renderDeviceLink = (deviceId) => {
+                if (!deviceId) return '-';
+                return `<button type="button" class="log-device-link" data-device="${encodeDataValue(deviceId)}" style="border:none;background:transparent;color:#2563eb;padding:0;cursor:pointer;font:inherit;">${escapeHtml(deviceId)}</button>`;
+            };
+
+            pagedLogs.forEach((log) => {
+                let actionText = `<span class="badge badge-secondary">${escapeHtml(getLogActionLabel(log.action))}</span>`;
+                let details = escapeHtml(JSON.stringify(log));
+                const matchReasonText = escapeHtml(log.matchReasonLabel || log.matchReason || '-');
+
+                switch (log.action) {
+                    case 'activate':
+                        actionText = '<span class="badge badge-success">密钥激活</span>';
+                        details = `密钥: ${renderLicenseLink(log.license, true)}<br>设备: ${renderDeviceLink(log.deviceId)}`;
+                        break;
+                    case 'check_task':
+                        actionText = '<span class="badge badge-primary">任务校验</span>';
+                        details = `密钥: ${renderLicenseLink(log.license, true)}<br>设备: ${renderDeviceLink(log.deviceId)}`;
+                        break;
+                    case 'trial_activate':
+                        actionText = '<span class="badge badge-warning">试用激活</span>';
+                        details = `设备: ${renderDeviceLink(log.deviceId)}<br>密钥: ${renderLicenseLink(log.license)}`;
+                        break;
+                    case 'trial_task':
+                        actionText = '<span class="badge badge-warning">试用任务</span>';
+                        details = `设备: ${renderDeviceLink(log.deviceId)}<br>剩余: ${escapeHtml(log.remainingTasks)} 次`;
+                        break;
+                    case 'batch_generate':
+                        actionText = '<span class="badge badge-success">批量生成</span>';
+                        details = `数量: ${escapeHtml(log.count)}<br>期限: ${escapeHtml(log.days)}`;
+                        break;
+                    case 'delete':
+                        actionText = '<span class="badge badge-danger">删除密钥</span>';
+                        details = `密钥: ${renderLicenseLink(log.license)}`;
+                        break;
+                    case 'reset_trial_tasks':
+                        actionText = '<span class="badge badge-primary">重置试用</span>';
+                        details = `设备: ${renderDeviceLink(log.deviceId)}<br>次数: ${escapeHtml(log.oldTasks)} → ${escapeHtml(log.newTasks)}`;
+                        break;
+                    case 'delete_trial_device':
+                        actionText = '<span class="badge badge-danger">删除设备</span>';
+                        details = `设备: ${renderDeviceLink(log.deviceId)}<br>剩余: ${escapeHtml(log.remainingTasks)} 次`;
+                        break;
+                    case 'set_expired':
+                        actionText = '<span class="badge badge-danger">设置过期</span>';
+                        details = `密钥: ${renderLicenseLink(log.license, true)}`;
+                        break;
+                    case 'reset_feature_usage_stats':
+                        actionText = '<span class="badge badge-warning">重置统计</span>';
+                        details = `密钥: ${renderLicenseLink(log.license, true)}<br>功能: ${escapeHtml(log.feature || 'all')}`;
+                        break;
+                    default:
+                        break;
+                }
+
+                html += `<tr>
+                    <td style="white-space: nowrap;">${escapeHtml(log.timestamp)}</td>
+                    <td>${actionText}</td>
+                    <td style="font-size: 11px; white-space: nowrap;">${matchReasonText}</td>
+                    <td style="font-size: 11px;">${details}</td>
+                    <td>${escapeHtml(log.ip || '-')}</td>
+                </tr>`;
+            });
+
+            html += '</tbody></table>';
+
+            if (totalPages > 1) {
+                html += '<div style="margin-top: 20px; text-align: center;">';
+                html += `<button class="btn btn-primary" onclick="changeLogsPage(${currentLogsPage - 1})" ${currentLogsPage === 1 ? 'disabled' : ''}>上一页</button>`;
+                html += `<span style="margin: 0 15px;">第 ${currentLogsPage} / ${totalPages} 页（共 ${logs.length} 条）</span>`;
+                html += `<button class="btn btn-primary" onclick="changeLogsPage(${currentLogsPage + 1})" ${currentLogsPage === totalPages ? 'disabled' : ''}>下一页</button>`;
+                html += '</div>';
+            }
+
+            tableEl.innerHTML = html;
+
+            tableEl.querySelectorAll('.log-license-link').forEach((button) => {
+                button.addEventListener('click', () => {
+                    focusLicenseInAdmin(
+                        decodeDataValue(button.dataset.license),
+                        button.dataset.openLimits === '1'
+                    );
+                });
+            });
+
+            tableEl.querySelectorAll('.log-device-link').forEach((button) => {
+                button.addEventListener('click', () => {
+                    focusTrialDeviceInAdmin(decodeDataValue(button.dataset.device));
+                });
+            });
+        }
+
+        ensureLogActionFilterOptions();
+        function renderAllLicensesStats(data, period) {
+            const contentDiv = document.getElementById('statsContent');
+            if (Object.keys(data).length === 0) {
+                contentDiv.innerHTML = '<p style="text-align: center; color: #999; padding: 40px;">暂无使用统计数据</p>';
+                return;
+            }
+
+            const features = collectStatsFeatures(data, period, false);
+            const rankedItems = Object.entries(data || {}).map(([licenseKey, stats]) => {
+                let periodData = {};
+                if (period === 'total') {
+                    periodData = stats?.total || {};
+                } else if (period === 'monthly') {
+                    Object.values(stats?.monthly || {}).forEach((monthData) => {
+                        Object.entries(monthData || {}).forEach(([feature, count]) => {
+                            periodData[feature] = (periodData[feature] || 0) + count;
+                        });
+                    });
+                } else {
+                    Object.values(stats?.daily || {}).forEach((dayData) => {
+                        Object.entries(dayData || {}).forEach(([feature, count]) => {
+                            periodData[feature] = (periodData[feature] || 0) + count;
+                        });
+                    });
+                }
+                const total = features.reduce((sum, feature) => sum + (Number(periodData[feature]) || 0), 0);
+                return { licenseKey, periodData, total };
+            }).sort((a, b) => b.total - a.total || String(a.licenseKey).localeCompare(String(b.licenseKey)));
+
+            let html = '<div class="actions" style="margin-bottom: 16px;"><button class="btn btn-secondary" onclick="exportCurrentStatsView()">导出当前视图</button></div>';
+            html += '<table><thead><tr><th>密钥</th>';
+            features.forEach((feature) => {
+                html += `<th>${getStatsFeatureLabel(feature)}</th>`;
+            });
+            html += '<th>总计</th></tr></thead><tbody>';
+
+            rankedItems.forEach(({ licenseKey, periodData, total }) => {
+                html += `<tr><td style="min-width: 280px;"><button type="button" class="stats-license-link" data-license="${encodeDataValue(licenseKey)}" style="font-family: monospace; font-size: 11px; white-space: normal; word-break: break-all; line-height: 1.5; border: none; background: transparent; color: #2563eb; padding: 0; text-align: left; cursor: pointer;" title="限制该密钥">${escapeHtml(licenseKey)}</button></td>`;
+                features.forEach((feature) => {
+                    html += `<td>${periodData[feature] || 0}</td>`;
+                });
+                html += `<td><strong>${total}</strong></td></tr>`;
+            });
+
+            html += '</tbody></table>';
+            contentDiv.innerHTML = html;
+            contentDiv.querySelectorAll('.stats-license-link').forEach((button) => {
+                button.addEventListener('click', () => {
+                    showLicenseLimitsConfig(decodeDataValue(button.dataset.license || ''));
+                });
+            });
         }
