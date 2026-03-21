@@ -443,6 +443,20 @@
                         <label for="testTaskDeviceId">设备ID</label>
                         <input type="text" id="testTaskDeviceId" class="form-control" placeholder="输入设备ID">
                     </div>
+                    <div class="form-group">
+                        <label for="testTaskFeature">测试功能</label>
+                        <select id="testTaskFeature" class="form-control">
+                            <option value="">通用校验（不测功能限制）</option>
+                            <option value="download">文件下载</option>
+                            <option value="export">帖子导出</option>
+                            <option value="turboDownload">极速下载</option>
+                            <option value="search">关键词搜索</option>
+                            <option value="searchResult">导出搜索框</option>
+                            <option value="column">专栏导出</option>
+                            <option value="digest">精华导出</option>
+                            <option value="backup">全量备份</option>
+                        </select>
+                    </div>
                     <button class="btn btn-primary" onclick="testTaskPermission()">🔍 测试权限</button>
                     <div id="testTaskResult" style="margin-top: 15px;"></div>
                 </div>
