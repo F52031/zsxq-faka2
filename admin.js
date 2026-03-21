@@ -979,7 +979,7 @@
         }
 
         async function loadLogs() {
-            const result = await apiRequest('getLogs', { page: 1, pageSize: 1000 });
+            const result = await apiRequest('getLogs', { page: 1, pageSize: 0 });
             const tableEl = document.getElementById('logsTable');
             
             if (!result.success) {
@@ -1226,6 +1226,8 @@
                 html += `<tr><td>状态</td><td><strong>${data.status === 'trial' ? '试用' : '正式授权'}</strong></td></tr>`;
                 html += `<tr><td>设备ID</td><td><code>${escapeHtml(deviceId)}</code></td></tr>`;
                 
+                html += `<tr><td>娴嬭瘯鍔熻兘</td><td>${escapeHtml(feature || '閫氱敤鏍￠獙')}</td></tr>`;
+
                 if (data.status === 'trial') {
                     html += `<tr><td>剩余次数</td><td><strong>${escapeHtml(data.remainingTasks)}</strong> 次</td></tr>`;
                 } else {
@@ -1255,7 +1257,13 @@
             
             resultDiv.innerHTML = '<div class="alert alert-info">⏳ 测试中...</div>';
             
-            const result = await apiRequest('checkTask', { deviceId });
+            const feature = document.getElementById('testTaskFeature')?.value.trim() || '';
+            const payload = { deviceId };
+            if (feature) {
+                payload.feature = feature;
+            }
+
+            const result = await apiRequest('checkTask', payload);
             
             if (result.success) {
                 const data = result.data;
@@ -1524,6 +1532,52 @@
         }
         
         // 渲染所有密钥的统计
+        const FEATURE_LABELS = {
+            export: '📝 帖子导出',
+            download: '📜 文件下载',
+            turboDownload: '🚀 极速下载',
+            search: '🔍 关键词搜索',
+            searchResult: '🔎 导出搜索框',
+            column: '📎 专栏导出',
+            digest: '⭐ 精华导出',
+            backup: '📝 全量备份'
+        };
+
+        function getStatsFeatureLabel(feature) {
+            return FEATURE_LABELS[feature] || feature;
+        }
+
+        function collectStatsFeatures(source, period, singleLicense = false) {
+            const knownFeatures = Object.keys(FEATURE_LABELS);
+            const foundFeatures = new Set();
+
+            const collectFromCounts = (counts) => {
+                Object.keys(counts || {}).forEach((feature) => {
+                    if (feature) foundFeatures.add(feature);
+                });
+            };
+
+            if (singleLicense) {
+                if (period === 'total') {
+                    collectFromCounts(source);
+                } else {
+                    Object.values(source || {}).forEach(collectFromCounts);
+                }
+            } else {
+                Object.values(source || {}).forEach((stats) => {
+                    if (period === 'total') {
+                        collectFromCounts(stats?.total || {});
+                    } else if (period === 'monthly') {
+                        Object.values(stats?.monthly || {}).forEach(collectFromCounts);
+                    } else if (period === 'daily') {
+                        Object.values(stats?.daily || {}).forEach(collectFromCounts);
+                    }
+                });
+            }
+
+            return [...new Set([...knownFeatures, ...foundFeatures])];
+        }
+
         function renderAllLicensesStats(data, period) {
             const contentDiv = document.getElementById('statsContent');
             
@@ -1534,20 +1588,10 @@
             
             let html = '<table><thead><tr><th>密钥</th>';
             
-            const features = ['export', 'download', 'turboDownload', 'search', 'searchResult', 'column', 'digest', 'backup'];
-            const featureNames = {
-                export: '📤 帖子导出',
-                download: '📥 文件下载',
-                turboDownload: '🚀 极速下载',
-                search: '🔍 关键词搜索',
-                searchResult: '📋 导出搜索框',
-                column: '📚 专栏导出',
-                digest: '⭐ 精华导出',
-                backup: '📦 全量备份'
-            };
+            const features = collectStatsFeatures(data, period, false);
             
             features.forEach(f => {
-                html += `<th>${featureNames[f]}</th>`;
+                html += `<th>${getStatsFeatureLabel(f)}</th>`;
             });
             
             html += '<th>总计</th></tr></thead><tbody>';
@@ -1564,16 +1608,16 @@
                 } else if (period === 'monthly') {
                     // 汇总所有月份
                     periodData = {};
-                    for (const [month, monthData] of Object.entries(stats.monthly || {})) {
-                        for (const [feature, count] of Object.entries(monthData)) {
+                    for (const monthData of Object.values(stats.monthly || {})) {
+                        for (const [feature, count] of Object.entries(monthData || {})) {
                             periodData[feature] = (periodData[feature] || 0) + count;
                         }
                     }
                 } else if (period === 'daily') {
                     // 汇总所有天
                     periodData = {};
-                    for (const [day, dayData] of Object.entries(stats.daily || {})) {
-                        for (const [feature, count] of Object.entries(dayData)) {
+                    for (const dayData of Object.values(stats.daily || {})) {
+                        for (const [feature, count] of Object.entries(dayData || {})) {
                             periodData[feature] = (periodData[feature] || 0) + count;
                         }
                     }
@@ -1596,22 +1640,12 @@
         function renderSingleLicenseStats(data, license, period) {
             const contentDiv = document.getElementById('statsContent');
             
-            const featureNames = {
-                export: '📤 帖子导出',
-                download: '📥 文件下载',
-                turboDownload: '🚀 极速下载',
-                search: '🔍 关键词搜索',
-                searchResult: '📋 导出搜索框',
-                column: '📚 专栏导出',
-                digest: '⭐ 精华导出',
-                backup: '📦 全量备份'
-            };
-            
             let html = '<table><thead><tr><th>时间</th>';
             
-            const features = Object.keys(featureNames);
+            const features = collectStatsFeatures(data, period, true);
+            const columnCount = features.length + 2;
             features.forEach(f => {
-                html += `<th>${featureNames[f]}</th>`;
+                html += `<th>${getStatsFeatureLabel(f)}</th>`;
             });
             
             html += '<th>总计</th></tr></thead><tbody>';
@@ -1631,7 +1665,7 @@
                 const timeData = Object.entries(data).sort((a, b) => b[0].localeCompare(a[0]));
                 
                 if (timeData.length === 0) {
-                    html += '<tr><td colspan="10" style="text-align: center; color: #999;">暂无数据</td></tr>';
+                    html += `<tr><td colspan="${columnCount}" style="text-align: center; color: #999;">暂无数据</td></tr>`;
                 } else {
                     timeData.forEach(([time, counts]) => {
                         html += `<tr><td>${time}</td>`;
@@ -2389,6 +2423,223 @@
             }
         }
 
+        function normalizeLicenseInput(value) {
+            return String(value || '')
+                .trim()
+                .replace(/\s+/g, '')
+                .toUpperCase();
+        }
+
+        async function ensureExistingLicenseForAdmin(license) {
+            const normalizedLicense = normalizeLicenseInput(license);
+            if (!normalizedLicense) {
+                throw new Error('EMPTY_LICENSE');
+            }
+
+            const result = await apiRequest('listAllLicenses');
+            if (!result.success) {
+                throw new Error(result.error || 'LIST_LICENSES_FAILED');
+            }
+
+            const found = (result.data.licenses || []).find((item) => normalizeLicenseInput(item.license) === normalizedLicense);
+            if (!found) {
+                throw new Error('LICENSE_NOT_FOUND');
+            }
+
+            return { normalizedLicense, found };
+        }
+
+        async function loadLogs() {
+            const result = await apiRequest('getLogs', { page: 1, pageSize: 0 });
+            const tableEl = document.getElementById('logsTable');
+
+            if (!result.success) {
+                tableEl.innerHTML = '<p>加载失败：' + escapeHtml(result.error || '未知错误') + '</p>';
+                updatePageMeta('logsMeta', '加载操作日志失败');
+                return;
+            }
+
+            allLogsRaw = result.data.logs || [];
+            filterLogs();
+        }
+
+        async function exportLogs() {
+            const result = await apiRequest('getLogs', { page: 1, pageSize: 0 });
+            if (!result.success) {
+                showToast('加载日志失败，无法导出', 'error');
+                return;
+            }
+
+            allLogsRaw = result.data.logs || [];
+            filterLogs();
+
+            if (!allLogs.length) {
+                showToast('当前没有可导出的日志', 'error');
+                return;
+            }
+
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+            let content = '时间,动作,通过原因,密钥,设备ID,IP,详情\n';
+            allLogs.forEach((log) => {
+                const details = [
+                    log.matchReasonLabel ? `通过:${log.matchReasonLabel}` : '',
+                    log.remainingTasks ? `剩余:${log.remainingTasks}` : '',
+                    log.oldTasks !== undefined ? `旧值:${log.oldTasks}` : '',
+                    log.newTasks !== undefined ? `新值:${log.newTasks}` : '',
+                    log.count !== undefined ? `数量:${log.count}` : ''
+                ].filter(Boolean).join(' | ');
+                content += `${log.timestamp},${getLogActionLabel(log.action)},${log.matchReasonLabel || log.matchReason || ''},${log.license || ''},${log.deviceId || ''},${log.ip || ''},${details}\n`;
+            });
+            createDownloadFile(`admin-logs-${timestamp}.csv`, content, 'text/csv');
+            showToast(`已导出 ${allLogs.length} 条日志`);
+        }
+
+        async function testTaskPermission() {
+            const deviceId = document.getElementById('testTaskDeviceId').value.trim();
+            const feature = document.getElementById('testTaskFeature')?.value.trim() || '';
+            const resultDiv = document.getElementById('testTaskResult');
+
+            if (!deviceId) {
+                resultDiv.innerHTML = '<div class="alert alert-error">❌ 请输入设备ID</div>';
+                return;
+            }
+
+            resultDiv.innerHTML = '<div class="alert alert-info">⏳ 测试中...</div>';
+
+            const payload = { deviceId };
+            if (feature) {
+                payload.feature = feature;
+            }
+
+            const result = await apiRequest('checkTask', payload);
+
+            if (result.success) {
+                const data = result.data;
+                let html = '<div class="alert alert-success">';
+                html += '<h4>✅ 有权限执行任务</h4>';
+                html += '<table class="info-table">';
+                html += `<tr><td>状态</td><td><strong>${data.status === 'trial' ? '试用' : '正式授权'}</strong></td></tr>`;
+                html += `<tr><td>测试功能</td><td>${escapeHtml(feature || '通用校验')}</td></tr>`;
+
+                if (data.status === 'trial') {
+                    html += `<tr><td>剩余次数</td><td><strong>${escapeHtml(data.remainingTasks)}</strong> 次</td></tr>`;
+                    html += '<tr><td>提示</td><td style="color: #f59e0b;">⚠️ 本次测试已扣除 1 次试用次数</td></tr>';
+                } else {
+                    html += `<tr><td>是否永久</td><td>${data.isPermanent ? '<span style="color: #10b981;">✅ 永久授权</span>' : '⏱️ 时间授权'}</td></tr>`;
+                    html += `<tr><td>无限制</td><td>${data.unlimited ? '✅ 是' : '❌ 否'}</td></tr>`;
+                }
+
+                html += '</table></div>';
+                resultDiv.innerHTML = html;
+            } else {
+                resultDiv.innerHTML = `<div class="alert alert-error"><h4>❌ 无权限</h4><p>${escapeHtml(result.message || result.error || '未知错误')}</p></div>`;
+            }
+        }
+
+        async function showLicenseLimitsConfig(licenseFromList = '') {
+            const presetInput = document.getElementById('licenseLimitsTarget');
+            const presetLicense = licenseFromList || presetInput?.value.trim() || '';
+            const rawLicense = presetLicense || prompt('请输入要配置的密钥：');
+            const normalizedLicense = normalizeLicenseInput(rawLicense);
+            if (!normalizedLicense) return;
+
+            try {
+                await ensureExistingLicenseForAdmin(normalizedLicense);
+            } catch (error) {
+                showToast(error.message === 'LICENSE_NOT_FOUND' ? '该密钥不存在，无法配置限制' : '校验密钥失败', 'error');
+                return;
+            }
+
+            if (presetInput) {
+                presetInput.value = normalizedLicense;
+            }
+
+            const result = await apiRequest('getFeatureLimitsConfig');
+
+            if (!result.success) {
+                showToast('加载配置失败：' + (result.error || '未知错误'), 'error');
+                return;
+            }
+
+            const globalConfig = result.data.global;
+            const licenseConfig = result.data.licenses[normalizedLicense] || {};
+
+            const modalHtml = `
+                <div id="licenseLimitsModal" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 10000;">
+                    <div style="background: white; border-radius: 12px; padding: 30px; max-width: 800px; width: 90%; max-height: 90vh; overflow-y: auto;">
+                        <h2 style="margin-bottom: 10px;">🔽 单个密钥限制配置</h2>
+                        <p style="color: #666; margin-bottom: 5px;">密钥：<code style="background: #f3f4f6; padding: 4px 8px; border-radius: 4px;">${escapeHtml(normalizedLicense)}</code></p>
+                        <p style="color: #666; margin-bottom: 20px; font-size: 13px;">💡 留空或设置为 0 将使用全局配置</p>
+
+                        <div style="display: grid; gap: 20px;">
+                            ${createLicenseFeatureLimitRow('export', '📤 帖子导出', globalConfig.export, licenseConfig.export)}
+                            ${createLicenseFeatureLimitRow('download', '📥 文件下载', globalConfig.download, licenseConfig.download)}
+                            ${createLicenseFeatureLimitRow('turboDownload', '🚀 极速下载', globalConfig.turboDownload, licenseConfig.turboDownload)}
+                            ${createLicenseFeatureLimitRow('search', '🔍 关键词搜索', globalConfig.search, licenseConfig.search)}
+                            ${createLicenseFeatureLimitRow('searchResult', '📋 导出搜索框', globalConfig.searchResult, licenseConfig.searchResult)}
+                            ${createLicenseFeatureLimitRow('column', '📚 专栏导出', globalConfig.column, licenseConfig.column)}
+                            ${createLicenseFeatureLimitRow('digest', '⭐ 精华导出', globalConfig.digest, licenseConfig.digest)}
+                            ${createLicenseFeatureLimitRow('backup', '📦 全量备份', globalConfig.backup, licenseConfig.backup)}
+                        </div>
+
+                        <div style="margin-top: 30px; display: flex; gap: 10px; justify-content: flex-end;">
+                            <button class="btn btn-secondary" onclick="closeLicenseLimitsModal()">取消</button>
+                            <button id="saveLicenseLimitsBtn" class="btn btn-primary" data-license="${encodeDataValue(normalizedLicense)}">💾 保存配置</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            document.getElementById('saveLicenseLimitsBtn')?.addEventListener('click', () => {
+                saveLicenseLimits(normalizedLicense);
+            });
+        }
+
+        async function saveLicenseLimits(license) {
+            let normalizedLicense = normalizeLicenseInput(license);
+            try {
+                ({ normalizedLicense } = await ensureExistingLicenseForAdmin(normalizedLicense));
+            } catch (error) {
+                showToast(error.message === 'LICENSE_NOT_FOUND' ? '该密钥不存在，无法保存限制' : '校验密钥失败', 'error');
+                return;
+            }
+
+            const features = ['export', 'download', 'turboDownload', 'search', 'searchResult', 'column', 'digest', 'backup'];
+
+            const currentResult = await apiRequest('getFeatureLimitsConfig');
+            if (!currentResult.success) {
+                showToast('加载配置失败：' + (currentResult.error || '未知错误'), 'error');
+                return;
+            }
+
+            const config = currentResult.data;
+            config.licenses[normalizedLicense] = {};
+
+            features.forEach(feature => {
+                const enabled = document.getElementById(`lic-limit-${feature}-enabled`).checked;
+                const limit = parseInt(document.getElementById(`lic-limit-${feature}-count`).value, 10) || 0;
+                const period = document.getElementById(`lic-limit-${feature}-period`).value;
+
+                if (limit !== 0 || period !== 'unlimited' || !enabled) {
+                    config.licenses[normalizedLicense][feature] = { enabled, limit, period };
+                }
+            });
+
+            if (Object.keys(config.licenses[normalizedLicense]).length === 0) {
+                delete config.licenses[normalizedLicense];
+            }
+
+            const result = await apiRequest('updateFeatureLimitsConfig', { config });
+
+            if (result.success) {
+                showToast(`密钥 ${normalizedLicense} 的限制配置已保存`);
+                closeLicenseLimitsModal();
+            } else {
+                showToast('保存失败：' + (result.error || '未知错误'), 'error');
+            }
+        }
+
         async function deleteLicense(license) {
             if (!confirm('确定要删除此密钥吗？')) return;
 
@@ -2493,11 +2744,19 @@
         async function showLicenseLimitsConfig(licenseFromList = '') {
             const presetInput = document.getElementById('licenseLimitsTarget');
             const presetLicense = licenseFromList || presetInput?.value.trim() || '';
-            const license = presetLicense || prompt('请输入要配置的密钥：');
-            if (!license) return;
+            const rawLicense = presetLicense || prompt('请输入要配置的密钥：');
+            const normalizedLicense = normalizeLicenseInput(rawLicense);
+            if (!normalizedLicense) return;
+
+            try {
+                await ensureExistingLicenseForAdmin(normalizedLicense);
+            } catch (error) {
+                showToast(error.message === 'LICENSE_NOT_FOUND' ? '该密钥不存在，无法配置限制' : '校验密钥失败', 'error');
+                return;
+            }
 
             if (presetInput) {
-                presetInput.value = license;
+                presetInput.value = normalizedLicense;
             }
 
             const result = await apiRequest('getFeatureLimitsConfig');
@@ -2508,13 +2767,13 @@
             }
 
             const globalConfig = result.data.global;
-            const licenseConfig = result.data.licenses[license] || {};
+            const licenseConfig = result.data.licenses[normalizedLicense] || {};
 
             const modalHtml = `
                 <div id="licenseLimitsModal" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 10000;">
                     <div style="background: white; border-radius: 12px; padding: 30px; max-width: 800px; width: 90%; max-height: 90vh; overflow-y: auto;">
                         <h2 style="margin-bottom: 10px;">🔑 单个密钥限制配置</h2>
-                        <p style="color: #666; margin-bottom: 5px;">密钥：<code style="background: #f3f4f6; padding: 4px 8px; border-radius: 4px;">${escapeHtml(license)}</code></p>
+                        <p style="color: #666; margin-bottom: 5px;">密钥：<code style="background: #f3f4f6; padding: 4px 8px; border-radius: 4px;">${escapeHtml(normalizedLicense)}</code></p>
                         <p style="color: #666; margin-bottom: 20px; font-size: 13px;">💡 留空或设置为 0 将使用全局配置</p>
 
                         <div style="display: grid; gap: 20px;">
@@ -2522,7 +2781,7 @@
                             ${createLicenseFeatureLimitRow('download', '📥 文件下载', globalConfig.download, licenseConfig.download)}
                             ${createLicenseFeatureLimitRow('turboDownload', '🚀 极速下载', globalConfig.turboDownload, licenseConfig.turboDownload)}
                             ${createLicenseFeatureLimitRow('search', '🔍 关键词搜索', globalConfig.search, licenseConfig.search)}
-                            ${createLicenseFeatureLimitRow('searchResult', '📋 导出搜索框', globalConfig.searchResult, licenseConfig.searchResult)}
+                            ${createLicenseFeatureLimitRow('searchResult', '📋 导出搜索结果', globalConfig.searchResult, licenseConfig.searchResult)}
                             ${createLicenseFeatureLimitRow('column', '📚 专栏导出', globalConfig.column, licenseConfig.column)}
                             ${createLicenseFeatureLimitRow('digest', '⭐ 精华导出', globalConfig.digest, licenseConfig.digest)}
                             ${createLicenseFeatureLimitRow('backup', '📦 全量备份', globalConfig.backup, licenseConfig.backup)}
@@ -2530,19 +2789,31 @@
 
                         <div style="margin-top: 30px; display: flex; gap: 10px; justify-content: flex-end;">
                             <button class="btn btn-secondary" onclick="closeLicenseLimitsModal()">取消</button>
-                            <button id="saveLicenseLimitsBtn" class="btn btn-primary" data-license="${encodeDataValue(license)}">💾 保存配置</button>
+                            <button id="saveLicenseLimitsBtn" class="btn btn-primary" data-license="${encodeDataValue(normalizedLicense)}">💾 保存配置</button>
                         </div>
                     </div>
                 </div>
             `;
 
+            const existingModal = document.getElementById('licenseLimitsModal');
+            if (existingModal) existingModal.remove();
+
             document.body.insertAdjacentHTML('beforeend', modalHtml);
-            document.getElementById('saveLicenseLimitsBtn')?.addEventListener('click', () => {
-                saveLicenseLimits(license);
+            document.getElementById('saveLicenseLimitsBtn')?.addEventListener('click', (event) => {
+                const targetLicense = event.currentTarget?.getAttribute('data-license') || normalizedLicense;
+                saveLicenseLimits(targetLicense);
             });
         }
 
         async function saveLicenseLimits(license) {
+            let normalizedLicense = normalizeLicenseInput(license);
+            try {
+                ({ normalizedLicense } = await ensureExistingLicenseForAdmin(normalizedLicense));
+            } catch (error) {
+                showToast(error.message === 'LICENSE_NOT_FOUND' ? '该密钥不存在，无法保存限制' : '校验密钥失败', 'error');
+                return;
+            }
+
             const features = ['export', 'download', 'turboDownload', 'search', 'searchResult', 'column', 'digest', 'backup'];
 
             const currentResult = await apiRequest('getFeatureLimitsConfig');
@@ -2552,7 +2823,7 @@
             }
 
             const config = currentResult.data;
-            config.licenses[license] = {};
+            config.licenses[normalizedLicense] = {};
 
             features.forEach(feature => {
                 const enabled = document.getElementById(`lic-limit-${feature}-enabled`).checked;
@@ -2560,18 +2831,18 @@
                 const period = document.getElementById(`lic-limit-${feature}-period`).value;
 
                 if (limit !== 0 || period !== 'unlimited' || !enabled) {
-                    config.licenses[license][feature] = { enabled, limit, period };
+                    config.licenses[normalizedLicense][feature] = { enabled, limit, period };
                 }
             });
 
-            if (Object.keys(config.licenses[license]).length === 0) {
-                delete config.licenses[license];
+            if (Object.keys(config.licenses[normalizedLicense]).length === 0) {
+                delete config.licenses[normalizedLicense];
             }
 
             const result = await apiRequest('updateFeatureLimitsConfig', { config });
 
             if (result.success) {
-                showToast(`密钥 ${license} 的限制配置已保存`);
+                showToast(`密钥 ${normalizedLicense} 的限制配置已保存`);
                 closeLicenseLimitsModal();
             } else {
                 showToast('保存失败：' + (result.error || '未知错误'), 'error');
@@ -3030,7 +3301,16 @@
             showToast(`已导出 ${filteredTrialDevices.length} 台试用设备`);
         }
 
-        function exportLogs() {
+        async function exportLogs() {
+            const result = await apiRequest('getLogs', { page: 1, pageSize: 0 });
+            if (!result.success) {
+                showToast('加载日志失败，无法导出', 'error');
+                return;
+            }
+
+            allLogsRaw = result.data.logs || [];
+            filterLogs();
+
             if (!allLogs.length) {
                 showToast('当前没有可导出的日志', 'error');
                 return;
