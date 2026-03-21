@@ -1598,7 +1598,7 @@
             
             // 遍历所有密钥
             for (const [lic, stats] of Object.entries(data)) {
-                html += `<tr><td style="font-family: monospace; font-size: 11px;">${lic.substring(0, 20)}...</td>`;
+                html += `<tr><td style="min-width: 280px;"><button type="button" class="stats-license-link" data-license="${encodeDataValue(lic)}" title="点击编辑密钥配置或限制功能" style="font-family: monospace; font-size: 11px; white-space: normal; word-break: break-all; line-height: 1.5; border: none; background: transparent; color: #2563eb; padding: 0; text-align: left; cursor: pointer;">${escapeHtml(lic)}</button></td>`;
                 
                 let total = 0;
                 let periodData = {};
@@ -1634,6 +1634,11 @@
             
             html += '</tbody></table>';
             contentDiv.innerHTML = html;
+            contentDiv.querySelectorAll('.stats-license-link').forEach((button) => {
+                button.addEventListener('click', () => {
+                    openStatsLicenseConfig(decodeDataValue(button.dataset.license || ''));
+                });
+            });
         }
         
         // 渲染单个密钥的统计
@@ -1682,6 +1687,33 @@
             
             html += '</tbody></table>';
             contentDiv.innerHTML = html;
+        }
+
+        async function openStatsLicenseConfig(license) {
+            const targetLicense = String(license || '').trim();
+            if (!targetLicense) {
+                return;
+            }
+
+            const cachedLicense = allLicensesCache.find((item) => item.license === targetLicense);
+            if (cachedLicense) {
+                editLicenseConfig(cachedLicense.license, cachedLicense.popupMessage || '');
+                return;
+            }
+
+            const result = await apiRequest('listAllLicenses');
+            if (!result.success) {
+                showToast('加载密钥配置失败：' + (result.error || '未知错误'), 'error');
+                return;
+            }
+
+            const found = (result.data.licenses || []).find((item) => item.license === targetLicense);
+            if (!found) {
+                showToast('未找到该密钥，可能已被删除', 'error');
+                return;
+            }
+
+            editLicenseConfig(found.license, found.popupMessage || '');
         }
         
         // 初始化统计页面（加载密钥列表）
@@ -3708,6 +3740,14 @@
             `;
 
             document.body.insertAdjacentHTML('beforeend', modalHtml);
+            const saveLicenseConfigBtn = document.getElementById('saveLicenseConfigBtn');
+            if (saveLicenseConfigBtn && !document.getElementById('openLicenseLimitsFromConfigBtn')) {
+                saveLicenseConfigBtn.insertAdjacentHTML('beforebegin', '<button id="openLicenseLimitsFromConfigBtn" class="btn btn-secondary">限制功能</button>');
+            }
+            document.getElementById('openLicenseLimitsFromConfigBtn')?.addEventListener('click', () => {
+                closeLicenseConfigModal();
+                showLicenseLimitsConfig(license);
+            });
             document.getElementById('saveLicenseConfigBtn')?.addEventListener('click', async () => {
                 const saveBtn = document.getElementById('saveLicenseConfigBtn');
                 const popupMessage = document.getElementById('licenseConfigTextarea')?.value || '';
