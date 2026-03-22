@@ -220,6 +220,7 @@
                     <input type="text" id="searchTrialDevice" class="form-control search-box" placeholder="搜索设备ID / IP / 时间..." aria-label="搜索试用设备" oninput="filterTrialDevices()">
                     <button class="btn btn-primary" onclick="loadTrialDevices()">🔄 刷新</button>
                     <button class="btn btn-secondary" onclick="exportTrialDevices()">📊 导出CSV</button>
+                    <button class="btn btn-danger" onclick="clearTrialDevices(this)">🗑️ 清空全部试用设备</button>
                 </div>
                 <div id="trialMeta" class="page-meta">尚未加载试用设备数据</div>
                 <div id="trialTable"></div>
@@ -236,6 +237,7 @@
                         <option value="trial_task">试用任务</option>
                         <option value="reset_trial_tasks">重置试用</option>
                         <option value="delete_trial_device">删除设备</option>
+                        <option value="clear_trial_devices">清空试用设备</option>
                         <option value="batch_generate">批量生成</option>
                         <option value="delete">删除密钥</option>
                     </select>
@@ -397,7 +399,7 @@
                 <h2 style="margin-bottom: 20px;">📈 功能使用统计</h2>
                 
                 <div class="actions">
-                    <select id="statsLicenseFilter" class="form-control" style="width: 300px;" onchange="loadUsageStats()">
+                    <select id="statsLicenseFilter" class="form-control" style="width: 420px; max-width: 100%; min-width: 320px;" onchange="loadUsageStats()">
                         <option value="">全部密钥</option>
                     </select>
                     <select id="statsPeriodFilter" class="form-control" style="width: 150px;" onchange="loadUsageStats()">
