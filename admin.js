@@ -4,6 +4,7 @@
         
         // 页面加载时检查登录状态
         window.addEventListener('DOMContentLoaded', () => {
+            ensureDeviceManagementUI();
             if (!checkLoginStatus()) {
                 // 未登录，显示登录页面
                 document.getElementById('loginPage').style.display = 'flex';
@@ -40,11 +41,7 @@
             document.getElementById('loginPage').style.display = 'flex';
         }
 
-        function handleUnauthorized(message = '登录已失效，请重新登录') {
-            clearAdminSession();
-            showLoginPage();
-            alert(message);
-        }
+        
 
         async function apiRawRequest(action, data = {}) {
             const response = await fetch(API_URL, {
@@ -64,41 +61,7 @@
             return false;
         }
 
-        async function handleLogin(event) {
-            event.preventDefault();
-
-            const password = document.getElementById('loginPassword').value;
-            const errorDiv = document.getElementById('loginError');
-
-            try {
-                const result = await apiRawRequest('adminLogin', { password });
-
-                if (result.success) {
-                    const sessionData = {
-                        loggedIn: true,
-                        token: result.data.token,
-                        expiry: result.data.expiresAt
-                    };
-
-                    localStorage.setItem(SESSION_KEY, JSON.stringify(sessionData));
-                    showMainContent();
-                    document.getElementById('loginPassword').value = '';
-                    errorDiv.classList.remove('show');
-                    initializeAdminTabs();
-                } else {
-                    errorDiv.classList.add('show');
-                    errorDiv.textContent = result.message || '密码错误，请重试';
-                    document.getElementById('loginPassword').value = '';
-                    document.getElementById('loginPassword').focus();
-                }
-            } catch (error) {
-                console.error('登录失败:', error);
-                errorDiv.classList.add('show');
-                errorDiv.textContent = '登录失败，请检查网络后重试';
-            }
-
-            return false;
-        }
+        
 
         function showMainContent() {
             document.getElementById('loginPage').style.display = 'none';
@@ -112,30 +75,7 @@
             }
         }
 
-        async function apiRequest(action, data = {}) {
-            try {
-                const session = getAdminSession();
-                if (!session) {
-                    handleUnauthorized();
-                    return { success: false, error: 'UNAUTHORIZED' };
-                }
-
-                const result = await apiRawRequest(action, {
-                    adminToken: session.token,
-                    ...data
-                });
-
-                if (!result.success && result.error === 'UNAUTHORIZED') {
-                    handleUnauthorized(result.message || '登录已失效，请重新登录');
-                }
-
-                return result;
-            } catch (error) {
-                console.error('API 请求失败:', error);
-                alert('网络错误：' + error.message);
-                return { success: false, error: error.message };
-            }
-        }
+        
 
         function escapeHtml(value) {
             return String(value ?? '')
@@ -210,6 +150,70 @@
             });
         }
 
+        function ensureLogFilterOption(value, label) {
+            const select = document.getElementById('filterLogAction');
+            if (!select || select.querySelector(`option[value="${value}"]`)) {
+                return;
+            }
+
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = label;
+            select.appendChild(option);
+        }
+
+        function ensureDeviceManagementUI() {
+            const tabs = document.querySelector('.tabs');
+            const content = document.querySelector('.content');
+            if (!tabs || !content) {
+                return;
+            }
+
+            if (!getTabButton('devices')) {
+                const button = document.createElement('button');
+                button.className = 'tab';
+                button.setAttribute('onclick', "showTab('devices')");
+                button.textContent = '🧷 设备ID管理';
+
+                const logsTab = getTabButton('logs');
+                if (logsTab) {
+                    tabs.insertBefore(button, logsTab);
+                } else {
+                    tabs.appendChild(button);
+                }
+            }
+
+            if (!document.getElementById('page-devices')) {
+                const page = document.createElement('div');
+                page.id = 'page-devices';
+                page.className = 'page';
+                page.innerHTML = `
+                    <div class="actions page-toolbar">
+                        <input type="text" id="searchDeviceInventory" class="form-control search-box" placeholder="搜索设备ID / 授权 / IP / 备注..." aria-label="搜索设备ID" oninput="filterDeviceInventory()">
+                        <button class="btn btn-primary" onclick="loadDeviceInventory()">🔄 刷新</button>
+                    </div>
+                    <div class="actions page-toolbar" style="margin-top: 12px;">
+                        <input type="text" id="manualRestrictDeviceId" class="form-control search-box" placeholder="输入要限制的设备ID" aria-label="限制设备ID">
+                        <input type="text" id="manualRestrictReason" class="form-control search-box" placeholder="限制原因 / 备注（可选）" aria-label="限制原因">
+                        <button class="btn btn-danger" onclick="restrictDeviceIdFromForm()">🚫 限制设备ID</button>
+                    </div>
+                    <div id="deviceMeta" class="page-meta">尚未加载设备ID数据</div>
+                    <div id="deviceTable"></div>
+                `;
+
+                const logsPage = document.getElementById('page-logs');
+                if (logsPage) {
+                    content.insertBefore(page, logsPage);
+                } else {
+                    content.appendChild(page);
+                }
+            }
+
+            ensureLogFilterOption('restrict_device_id', '限制设备ID');
+            ensureLogFilterOption('unrestrict_device_id', '解除设备限制');
+            ensureLogFilterOption('delete_device_id_records', '删除设备记录');
+        }
+
         function initializeAdminTabs() {
             const savedTab = localStorage.getItem('adminCurrentTab') || 'dashboard';
             const tabs = document.querySelectorAll('.tab');
@@ -248,6 +252,7 @@
                 else if (savedTab === 'licenses') loadLicenses();
                 else if (savedTab === 'config') loadGlobalConfig();
                 else if (savedTab === 'trial') loadTrialDevices();
+                else if (savedTab === 'devices') loadDeviceInventory();
                 else if (savedTab === 'logs') loadLogs();
                 else if (savedTab === 'features') loadFeatureConfig();
                 else if (savedTab === 'stats') {
@@ -259,536 +264,61 @@
             }
         }
 
-        function showTab(tabName) {
-            // 更新标签按钮
-            document.querySelectorAll('.tab').forEach(tab => {
-                tab.classList.remove('active');
-            });
-            event.target.classList.add('active');
-            
-            // 更新页面
-            document.querySelectorAll('.page').forEach(page => {
-                page.classList.remove('active');
-            });
-            document.getElementById('page-' + tabName).classList.add('active');
-            
-            // 保存当前标签页到localStorage
-            localStorage.setItem('adminCurrentTab', tabName);
-            
-            // 加载数据
-            if (tabName === 'dashboard') loadDashboard();
-            else if (tabName === 'licenses') loadLicenses();
-            else if (tabName === 'config') loadGlobalConfig();
-            else if (tabName === 'trial') loadTrialDevices();
-            else if (tabName === 'logs') loadLogs();
-            else if (tabName === 'features') loadFeatureConfig();
-            else if (tabName === 'stats') {
-                initStatsPage();
-                loadUsageStats();
-            }
-        }
+        
 
         // 加载仪表盘
-        async function loadDashboard() {
-            const result = await apiRequest('getStats');
-            
-            if (result.success) {
-                const stats = result.data;
-                document.getElementById('totalLicenses').textContent = stats.totalLicenses;
-                document.getElementById('activeLicenses').textContent = stats.activeLicenses;
-                document.getElementById('boundDevices').textContent = stats.boundDevices;
-                document.getElementById('trialDevices').textContent = stats.trialDevices;
-            }
-        }
+        
 
         // 批量生成密钥
         let generatedLicensesCache = [];
         
-        async function batchGenerateLicenses() {
-            const count = parseInt(document.getElementById('licenseCount').value);
-            const days = parseInt(document.getElementById('expireDays').value);
-            const popupMessage = document.getElementById('popupMessage').value.trim();
-            
-            if (!count || count <= 0) {
-                alert('请输入有效的生成数量');
-                return;
-            }
-            
-            if (count > 1000) {
-                alert('单次最多生成1000个密钥');
-                return;
-            }
-            
-            const result = await apiRequest('batchGenerateLicenses', { 
-                count, 
-                days,
-                popupMessage
-            });
-            
-            if (result.success) {
-                generatedLicensesCache = result.data.licenses;
-                
-                document.getElementById('generatedCount').textContent = result.data.count;
-                document.getElementById('generatedDays').textContent = result.data.isPermanent ? '永久' : result.data.days + '天';
-                document.getElementById('generatedExpire').textContent = 
-                    result.data.isPermanent ? '永久有效' : '激活后' + result.data.days + '天';
-                
-                // 显示密钥列表
-                const listHtml = generatedLicensesCache.map((lic, index) => 
-                    `${index + 1}. ${lic}`
-                ).join('<br>');
-                document.getElementById('licensesList').innerHTML = listHtml;
-                
-                document.getElementById('generatedResult').style.display = 'block';
-                
-                loadDashboard();
-            } else {
-                alert('❌ 生成失败：' + result.error);
-            }
-        }
+        
 
         // 导出密钥
-        function exportLicenses(format) {
-            if (generatedLicensesCache.length === 0) {
-                alert('没有可导出的密钥');
-                return;
-            }
-            
-            const days = parseInt(document.getElementById('expireDays').value);
-            const isPermanent = days === 0;
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
-            let content, filename, mimeType;
-            
-            if (format === 'txt') {
-                content = generatedLicensesCache.join('\n');
-                filename = isPermanent ? `licenses-permanent-${timestamp}.txt` : `licenses-${days}days-${timestamp}.txt`;
-                mimeType = 'text/plain';
-            } else if (format === 'csv') {
-                content = '密钥,有效期,说明,状态\n';
-                const daysText = isPermanent ? '永久' : `${days}天`;
-                const expireNote = isPermanent ? '永久有效' : `激活后${days}天`;
-                generatedLicensesCache.forEach(lic => {
-                    content += `${lic},${daysText},${expireNote},未使用\n`;
-                });
-                filename = isPermanent ? `licenses-permanent-${timestamp}.csv` : `licenses-${days}days-${timestamp}.csv`;
-                mimeType = 'text/csv';
-            }
-            
-            const blob = new Blob([content], { type: mimeType });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename;
-            a.click();
-            URL.revokeObjectURL(url);
-            
-            alert(`✅ 已导出 ${generatedLicensesCache.length} 个密钥`);
-        }
+        
 
         // 复制全部密钥
-        function copyAllLicenses() {
-            if (generatedLicensesCache.length === 0) {
-                alert('没有可复制的密钥');
-                return;
-            }
-            
-            const text = generatedLicensesCache.join('\n');
-            navigator.clipboard.writeText(text).then(() => {
-                alert(`✅ 已复制 ${generatedLicensesCache.length} 个密钥到剪贴板`);
-            });
-        }
+        
 
         // 加载密钥列表
         let allLicensesCache = [];
         let currentLicensesPage = 1;
         const licensesPageSize = 20;
         
-        async function loadLicenses() {
-            const result = await apiRequest('listAllLicenses');
-            
-            if (!result.success) {
-                document.getElementById('licensesTable').innerHTML = '<p>加载失败：' + result.error + '</p>';
-                return;
-            }
-            
-            allLicensesCache = result.data.licenses;
-            currentLicensesPage = 1;
-            renderLicenses(allLicensesCache);
-        }
         
-        function renderLicenses(licenses) {
-            const start = (currentLicensesPage - 1) * licensesPageSize;
-            const end = start + licensesPageSize;
-            const pagedLicenses = licenses.slice(start, end);
-            const totalPages = Math.ceil(licenses.length / licensesPageSize);
-            
-            let html = '<table><thead><tr><th>密钥</th><th>期限</th><th>状态</th><th>设备ID</th><th>创建时间</th><th>激活时间</th><th>过期时间</th><th>剩余天数</th><th>配置</th><th>操作</th></tr></thead><tbody>';
-            
-            pagedLicenses.forEach(lic => {
-                const now = Date.now();
-                const isPermanent = lic.days === 0;
-                const daysLeft = isPermanent ? Infinity : (lic.expireTime ? Math.ceil((lic.expireTime - now) / (1000 * 60 * 60 * 24)) : lic.days);
-                
-                let statusBadge;
-                if (lic.isExpired) {
-                    statusBadge = '<span class="badge badge-danger">已过期</span>';
-                } else if (lic.status === 'unused') {
-                    statusBadge = '<span class="badge badge-success">未使用</span>';
-                } else if (lic.status === 'activated') {
-                    statusBadge = '<span class="badge badge-warning">已激活</span>';
-                }
-                
-                let daysLeftBadge = '';
-                if (isPermanent) {
-                    daysLeftBadge = '<span class="badge badge-success">永久</span>';
-                } else if (lic.status === 'unused') {
-                    daysLeftBadge = `<span class="badge badge-success">激活后${lic.days}天</span>`;
-                } else if (!lic.isExpired) {
-                    if (daysLeft <= 7) {
-                        daysLeftBadge = `<span class="badge badge-danger">${daysLeft}天</span>`;
-                    } else if (daysLeft <= 30) {
-                        daysLeftBadge = `<span class="badge badge-warning">${daysLeft}天</span>`;
-                    } else {
-                        daysLeftBadge = `<span class="badge badge-success">${daysLeft}天</span>`;
-                    }
-                }
-                
-                const periodText = isPermanent ? '永久' : `${lic.days}天`;
-                const activatedTime = lic.status === 'unused' ? '-' : (lic.activatedAt || '-');
-                const expireDisplay = lic.status === 'unused' ? '待激活' : lic.expire;
-                
-                // 配置信息显示
-                const hasConfig = lic.popupMessage || lic.purchaseUrl;
-                const configBadge = hasConfig ? '<span class="badge badge-success">已配置</span>' : '<span class="badge badge-secondary">未配置</span>';
-                
-                html += `<tr>
-                    <td style="font-family: monospace; font-size: 11px;">${lic.license}</td>
-                    <td>${periodText}</td>
-                    <td>${statusBadge}</td>
-                    <td style="font-family: monospace; font-size: 10px;">${lic.deviceId}</td>
-                    <td>${lic.created}</td>
-                    <td>${activatedTime}</td>
-                    <td>${expireDisplay}</td>
-                    <td>${daysLeftBadge}</td>
-                    <td>${configBadge}</td>
-                    <td>
-                        <button class="btn btn-sm btn-primary" onclick="editLicenseConfig('${lic.license}', \`${(lic.popupMessage || '').replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`)">配置</button>
-                        <button class="btn btn-sm btn-danger" onclick="deleteLicense('${lic.license}')">删除</button>
-                    </td>
-                </tr>`;
-            });
-            
-            html += '</tbody></table>';
-            
-            // 添加翻页控件
-            if (totalPages > 1) {
-                html += '<div style="margin-top: 20px; text-align: center;">';
-                html += `<button class="btn btn-primary" onclick="changeLicensesPage(${currentLicensesPage - 1})" ${currentLicensesPage === 1 ? 'disabled' : ''}>上一页</button>`;
-                html += `<span style="margin: 0 15px;">第 ${currentLicensesPage} / ${totalPages} 页 (共 ${licenses.length} 条)</span>`;
-                html += `<button class="btn btn-primary" onclick="changeLicensesPage(${currentLicensesPage + 1})" ${currentLicensesPage === totalPages ? 'disabled' : ''}>下一页</button>`;
-                html += '</div>';
-            }
-            
-            document.getElementById('licensesTable').innerHTML = html;
-        }
         
-        function changeLicensesPage(page) {
-            const totalPages = Math.ceil(allLicensesCache.length / licensesPageSize);
-            if (page < 1 || page > totalPages) return;
-            currentLicensesPage = page;
-            renderLicenses(allLicensesCache);
-        }
         
-        function filterLicenses() {
-            const statusFilter = document.getElementById('filterStatus').value;
-            const daysFilter = document.getElementById('filterDays').value;
-            
-            let filtered = allLicensesCache;
-            
-            if (statusFilter !== 'all') {
-                if (statusFilter === 'expired') {
-                    filtered = filtered.filter(l => l.isExpired);
-                } else {
-                    filtered = filtered.filter(l => l.status === statusFilter && !l.isExpired);
-                }
-            }
-            
-            if (daysFilter !== 'all') {
-                filtered = filtered.filter(l => l.days === parseInt(daysFilter));
-            }
-            
-            currentLicensesPage = 1;
-            renderLicenses(filtered);
-        }
         
-        function exportAllLicenses(format = 'csv') {
-            if (allLicensesCache.length === 0) {
-                alert('没有可导出的密钥');
-                return;
-            }
-            
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
-            let content, filename, mimeType;
-            
-            if (format === 'txt') {
-                content = allLicensesCache.map(lic => lic.license).join('\n');
-                filename = `all-licenses-${timestamp}.txt`;
-                mimeType = 'text/plain';
-            } else {
-                content = '密钥,期限,状态,设备ID,创建时间,过期时间\n';
-                
-                allLicensesCache.forEach(lic => {
-                    const status = lic.isExpired ? '已过期' : (lic.status === 'unused' ? '未使用' : '已激活');
-                    const periodText = (lic.isPermanent || lic.days === 0) ? '永久' : `${lic.days}天`;
-                    content += `${lic.license},${periodText},${status},${lic.deviceId},${lic.created},${lic.expire}\n`;
-                });
-                
-                filename = `all-licenses-${timestamp}.csv`;
-                mimeType = 'text/csv';
-            }
-            
-            const blob = new Blob([content], { type: mimeType });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename;
-            a.click();
-            URL.revokeObjectURL(url);
-            
-            alert(`✅ 已导出 ${allLicensesCache.length} 个密钥`);
-        }
+        
+        
+        
+        
+        
 
         // 加载试用设备
         let currentTrialPage = 1;
         const trialPageSize = 20;
         let allTrialDevices = [];
         
-        async function loadTrialDevices() {
-            const result = await apiRequest('listTrialDevices');
-            
-            if (!result.success) {
-                document.getElementById('trialTable').innerHTML = '<p>加载失败：' + result.error + '</p>';
-                return;
-            }
-            
-            allTrialDevices = result.data.devices || [];
-            currentTrialPage = 1;
-            renderTrialDevices();
-        }
-        
-        function renderTrialDevices() {
-            const start = (currentTrialPage - 1) * trialPageSize;
-            const end = start + trialPageSize;
-            const pagedDevices = allTrialDevices.slice(start, end);
-            const totalPages = Math.ceil(allTrialDevices.length / trialPageSize);
-            
-            let html = '<table><thead><tr><th>设备ID</th><th>剩余次数</th><th>首次使用</th><th>最后使用</th><th>IP地址</th><th>操作</th></tr></thead><tbody>';
-            
-            pagedDevices.forEach(device => {
-                html += `<tr>
-                    <td style="font-family: monospace; font-size: 11px;">${device.deviceId}</td>
-                    <td><span class="badge ${device.remainingTasks > 5 ? 'badge-success' : device.remainingTasks > 0 ? 'badge-warning' : 'badge-danger'}">${device.remainingTasks} 次</span></td>
-                    <td>${device.firstSeen}</td>
-                    <td>${device.lastSeen}</td>
-                    <td>${device.lastIP}</td>
-                    <td>
-                        <button class="btn btn-primary btn-sm" onclick="resetTrialTasks('${device.deviceId}', 10)" style="margin-bottom: 5px;">重置为10次</button>
-                        <button class="btn btn-secondary btn-sm" onclick="resetTrialTasks('${device.deviceId}', 20)" style="margin-bottom: 5px;">重置为20次</button>
-                        <button class="btn btn-danger btn-sm" onclick="deleteTrialDevice('${device.deviceId}')">删除设备</button>
-                    </td>
-                </tr>`;
-            });
-            
-            html += '</tbody></table>';
-            
-            // 添加翻页控件
-            if (totalPages > 1) {
-                html += '<div style="margin-top: 20px; text-align: center;">';
-                html += `<button class="btn btn-primary" onclick="changeTrialPage(${currentTrialPage - 1})" ${currentTrialPage === 1 ? 'disabled' : ''}>上一页</button>`;
-                html += `<span style="margin: 0 15px;">第 ${currentTrialPage} / ${totalPages} 页 (共 ${allTrialDevices.length} 条)</span>`;
-                html += `<button class="btn btn-primary" onclick="changeTrialPage(${currentTrialPage + 1})" ${currentTrialPage === totalPages ? 'disabled' : ''}>下一页</button>`;
-                html += '</div>';
-            }
-            
-            if (allTrialDevices.length === 0) {
-                html = '<p style="text-align: center; color: #999; padding: 40px;">暂无试用设备</p>';
-            }
-            
-            document.getElementById('trialTable').innerHTML = html;
-        }
-        
-        function changeTrialPage(page) {
-            const totalPages = Math.ceil(allTrialDevices.length / trialPageSize);
-            if (page < 1 || page > totalPages) return;
-            currentTrialPage = page;
-            renderTrialDevices();
-        }
-
-        // 重置试用次数
-        async function resetTrialTasks(deviceId, tasks) {
-            if (!confirm(`确定要将设备 ${deviceId.substring(0, 16)}... 的试用次数重置为 ${tasks} 次吗？`)) {
-                return;
-            }
-
-            const result = await apiRequest('resetTrialTasks', { deviceId, tasks });
-
-            if (result.success) {
-                alert(`✅ 重置成功！\n\n设备ID: ${deviceId.substring(0, 16)}...\n原次数: ${result.data.oldTasks} 次\n新次数: ${result.data.newTasks} 次`);
-                loadTrialDevices(); // 重新加载列表
-            } else {
-                alert('❌ 重置失败：' + result.error);
-            }
-        }
-
-        // 删除试用设备
-        async function deleteTrialDevice(deviceId) {
-            if (!confirm(`⚠️ 确定要删除设备吗？\n\n设备ID: ${deviceId.substring(0, 16)}...\n\n删除后该设备可以重新激活试用（10次）`)) {
-                return;
-            }
-
-            const result = await apiRequest('deleteTrialDevice', { deviceId });
-
-            if (result.success) {
-                alert(`✅ 删除成功！\n\n设备ID: ${deviceId.substring(0, 16)}...\n原剩余次数: ${result.data.deletedTasks} 次\n\n该设备现在可以重新激活试用`);
-                loadTrialDevices(); // 重新加载列表
-            } else {
-                alert('❌ 删除失败：' + result.error);
-            }
-        }
-
         // 加载操作日志
         let currentLogsPage = 1;
         const logsPageSize = 50;
         let allLogs = [];
         
-        async function loadLogs() {
-            const result = await apiRequest('getLogs', { page: 1, pageSize: 1000 });
-            
-            if (!result.success) {
-                document.getElementById('logsTable').innerHTML = '<p>加载失败：' + result.error + '</p>';
-                return;
-            }
-            
-            const filterAction = document.getElementById('filterLogAction')?.value || 'all';
-            allLogs = result.data.logs || [];
-            
-            // 筛选操作类型
-            if (filterAction !== 'all') {
-                allLogs = allLogs.filter(log => log.action === filterAction);
-            }
-            
-            currentLogsPage = 1;
-            renderLogs();
-        }
         
-        function renderLogs() {
-            const start = (currentLogsPage - 1) * logsPageSize;
-            const end = start + logsPageSize;
-            const pagedLogs = allLogs.slice(start, end);
-            const totalPages = Math.ceil(allLogs.length / logsPageSize);
-            
-            let html = '<table><thead><tr><th>时间</th><th>操作</th><th>详情</th><th>IP地址</th></tr></thead><tbody>';
-            
-            pagedLogs.forEach(log => {
-                let actionText = '';
-                let details = '';
-                
-                switch(log.action) {
-                    case 'activate':
-                        actionText = '<span class="badge badge-success">密钥激活</span>';
-                        details = `密钥: ${log.license}<br>设备: ${log.deviceId}`;
-                        break;
-                    case 'trial_activate':
-                        actionText = '<span class="badge badge-warning">试用激活</span>';
-                        details = `设备: ${log.deviceId}`;
-                        break;
-                    case 'trial_task':
-                        actionText = '<span class="badge badge-warning">试用任务</span>';
-                        details = `设备: ${log.deviceId}<br>剩余: ${log.remainingTasks} 次`;
-                        break;
-                    case 'batch_generate':
-                        actionText = '<span class="badge badge-success">批量生成</span>';
-                        details = `数量: ${log.count} 个<br>期限: ${log.days} 天`;
-                        break;
-                    case 'delete':
-                        actionText = '<span class="badge badge-danger">删除密钥</span>';
-                        details = `密钥: ${log.license}`;
-                        break;
-                    default:
-                        actionText = log.action;
-                        details = JSON.stringify(log);
-                }
-                
-                html += `<tr>
-                    <td style="white-space: nowrap;">${log.timestamp}</td>
-                    <td>${actionText}</td>
-                    <td style="font-size: 11px;">${details}</td>
-                    <td>${log.ip || '-'}</td>
-                </tr>`;
-            });
-            
-            html += '</tbody></table>';
-            
-            // 添加翻页控件
-            if (totalPages > 1) {
-                html += '<div style="margin-top: 20px; text-align: center;">';
-                html += `<button class="btn btn-primary" onclick="changeLogsPage(${currentLogsPage - 1})" ${currentLogsPage === 1 ? 'disabled' : ''}>上一页</button>`;
-                html += `<span style="margin: 0 15px;">第 ${currentLogsPage} / ${totalPages} 页 (共 ${allLogs.length} 条)</span>`;
-                html += `<button class="btn btn-primary" onclick="changeLogsPage(${currentLogsPage + 1})" ${currentLogsPage === totalPages ? 'disabled' : ''}>下一页</button>`;
-                html += '</div>';
-            }
-            
-            if (allLogs.length === 0) {
-                html = '<p style="text-align: center; color: #999; padding: 40px;">暂无操作日志</p>';
-            }
-            
-            document.getElementById('logsTable').innerHTML = html;
-        }
         
-        function changeLogsPage(page) {
-            const totalPages = Math.ceil(allLogs.length / logsPageSize);
-            if (page < 1 || page > totalPages) return;
-            currentLogsPage = page;
-            renderLogs();
-        }
+        
+        
+        
 
         // 编辑密钥配置
-        function editLicenseConfig(license, currentMessage) {
-            const message = prompt('请输入弹窗信息（留空则不显示弹窗）：', currentMessage || '');
-            if (message === null) return; // 用户取消
-            
-            updateLicenseConfig(license, message);
-        }
+        
         
         // 更新密钥配置
-        async function updateLicenseConfig(license, popupMessage) {
-            const result = await apiRequest('updateLicenseConfig', { 
-                license, 
-                popupMessage
-            });
-            
-            if (result.success) {
-                alert('✅ 配置已更新');
-                loadLicenses();
-            } else {
-                alert('❌ 更新失败：' + result.error);
-            }
-        }
+        
 
         // 删除密钥
-        async function deleteLicense(license) {
-            if (!confirm('确定要删除此密钥吗？')) return;
-            
-            const result = await apiRequest('deleteLicense', { license });
-            
-            if (result.success) {
-                alert('✅ 删除成功');
-                loadLicenses();
-                loadDashboard();
-            } else {
-                alert('❌ 删除失败：' + result.error);
-            }
-        }
+        
 
         // 搜索表格
         function searchTable(tableId) {
@@ -805,353 +335,21 @@
         // ==================== 全局配置函数 ====================
 
         // 加载全局配置
-        async function loadLicenses() {
-            const [result, limitsResult] = await Promise.all([
-                apiRequest('listAllLicenses'),
-                apiRequest('getFeatureLimitsConfig')
-            ]);
-            const tableEl = document.getElementById('licensesTable');
-            
-            if (!result.success) {
-                tableEl.innerHTML = '<p>加载失败：' + escapeHtml(result.error || '未知错误') + '</p>';
-                return;
-            }
-            
-            allLicensesCache = result.data.licenses;
-            currentLicensesPage = 1;
-            renderLicenses(allLicensesCache);
-        }
+        
 
-        function renderLicenses(licenses) {
-            const start = (currentLicensesPage - 1) * licensesPageSize;
-            const end = start + licensesPageSize;
-            const pagedLicenses = licenses.slice(start, end);
-            const totalPages = Math.ceil(licenses.length / licensesPageSize);
-            const tableEl = document.getElementById('licensesTable');
-            
-            let html = '<table><thead><tr><th>密钥</th><th>期限</th><th>状态</th><th>设备ID</th><th>创建时间</th><th>激活时间</th><th>过期时间</th><th>剩余天数</th><th>配置</th><th>操作</th></tr></thead><tbody>';
-            
-            pagedLicenses.forEach(lic => {
-                const now = Date.now();
-                const isPermanent = lic.days === 0;
-                const daysLeft = isPermanent ? Infinity : (lic.expireTime ? Math.ceil((lic.expireTime - now) / (1000 * 60 * 60 * 24)) : lic.days);
-                
-                let statusBadge = '<span class="badge badge-secondary">未知</span>';
-                if (lic.isExpired) {
-                    statusBadge = '<span class="badge badge-danger">已过期</span>';
-                } else if (lic.status === 'unused') {
-                    statusBadge = '<span class="badge badge-success">未使用</span>';
-                } else if (lic.status === 'activated') {
-                    statusBadge = '<span class="badge badge-warning">已激活</span>';
-                }
-                
-                let daysLeftBadge = '';
-                if (isPermanent) {
-                    daysLeftBadge = '<span class="badge badge-success">永久</span>';
-                } else if (lic.status === 'unused') {
-                    daysLeftBadge = `<span class="badge badge-success">激活后${escapeHtml(lic.days)}天</span>`;
-                } else if (!lic.isExpired) {
-                    if (daysLeft <= 7) {
-                        daysLeftBadge = `<span class="badge badge-danger">${escapeHtml(daysLeft)}天</span>`;
-                    } else if (daysLeft <= 30) {
-                        daysLeftBadge = `<span class="badge badge-warning">${escapeHtml(daysLeft)}天</span>`;
-                    } else {
-                        daysLeftBadge = `<span class="badge badge-success">${escapeHtml(daysLeft)}天</span>`;
-                    }
-                }
-                
-                const periodText = isPermanent ? '永久' : `${escapeHtml(lic.days)}天`;
-                const activatedTime = lic.status === 'unused' ? '-' : escapeHtml(lic.activatedAt || '-');
-                const expireDisplay = lic.status === 'unused' ? '待激活' : escapeHtml(lic.expire);
-                const hasConfig = !!lic.popupMessage;
-                const configBadge = hasConfig ? '<span class="badge badge-success">已配置</span>' : '<span class="badge badge-secondary">未配置</span>';
-                
-                const configBadgeDisplay = [
-                    (lic.popupMessage || '').trim() ? '<span class="badge badge-success">弹窗</span>' : '',
-                    limitSummary.chips
-                ].filter(Boolean).join(' ') || configBadge;
+        
 
-                html += `<tr>
-                    <td style="font-family: monospace; font-size: 11px;">${escapeHtml(lic.license)}</td>
-                    <td>${periodText}</td>
-                    <td>${statusBadge}</td>
-                    <td style="font-family: monospace; font-size: 10px;">${escapeHtml(lic.deviceId)}</td>
-                    <td>${escapeHtml(lic.created)}</td>
-                    <td>${activatedTime}</td>
-                    <td>${expireDisplay}</td>
-                    <td>${daysLeftBadge}</td>
-                    <td title="${escapeHtml(limitSummary.tooltip || '')}">${configBadgeDisplay}</td>
-                    <td>
-                        <button class="btn btn-sm btn-primary edit-license-config-btn" data-license="${encodeDataValue(lic.license)}" data-message="${encodeDataValue(lic.popupMessage || '')}">配置</button>
-                        <button class="btn btn-sm btn-danger delete-license-btn" data-license="${encodeDataValue(lic.license)}">删除</button>
-                    </td>
-                </tr>`;
-            });
-            
-            html += '</tbody></table>';
-            
-            if (totalPages > 1) {
-                html += '<div style="margin-top: 20px; text-align: center;">';
-                html += `<button class="btn btn-primary" onclick="changeLicensesPage(${currentLicensesPage - 1})" ${currentLicensesPage === 1 ? 'disabled' : ''}>上一页</button>`;
-                html += `<span style="margin: 0 15px;">第 ${currentLicensesPage} / ${totalPages} 页 (共 ${licenses.length} 条)</span>`;
-                html += `<button class="btn btn-primary" onclick="changeLicensesPage(${currentLicensesPage + 1})" ${currentLicensesPage === totalPages ? 'disabled' : ''}>下一页</button>`;
-                html += '</div>';
-            }
-            
-            tableEl.innerHTML = html;
+        
 
-            tableEl.querySelectorAll('.edit-license-config-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    editLicenseConfig(
-                        decodeDataValue(btn.dataset.license),
-                        decodeDataValue(btn.dataset.message)
-                    );
-                });
-            });
-
-            tableEl.querySelectorAll('.delete-license-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    deleteLicense(decodeDataValue(btn.dataset.license));
-                });
-            });
-        }
-
-        async function loadTrialDevices() {
-            const result = await apiRequest('listTrialDevices');
-            const tableEl = document.getElementById('trialTable');
-            
-            if (!result.success) {
-                tableEl.innerHTML = '<p>加载失败：' + escapeHtml(result.error || '未知错误') + '</p>';
-                return;
-            }
-            
-            allTrialDevices = result.data.devices || [];
-            currentTrialPage = 1;
-            renderTrialDevices();
-        }
-
-        function renderTrialDevices() {
-            const start = (currentTrialPage - 1) * trialPageSize;
-            const end = start + trialPageSize;
-            const pagedDevices = allTrialDevices.slice(start, end);
-            const totalPages = Math.ceil(allTrialDevices.length / trialPageSize);
-            const tableEl = document.getElementById('trialTable');
-            
-            let html = '<table><thead><tr><th>设备ID</th><th>剩余次数</th><th>首次使用</th><th>最后使用</th><th>IP地址</th><th>操作</th></tr></thead><tbody>';
-            
-            pagedDevices.forEach(device => {
-                html += `<tr>
-                    <td style="font-family: monospace; font-size: 11px;">${escapeHtml(device.deviceId)}</td>
-                    <td><span class="badge ${device.remainingTasks > 5 ? 'badge-success' : device.remainingTasks > 0 ? 'badge-warning' : 'badge-danger'}">${escapeHtml(device.remainingTasks)} 次</span></td>
-                    <td>${escapeHtml(device.firstSeen)}</td>
-                    <td>${escapeHtml(device.lastSeen)}</td>
-                    <td>${escapeHtml(device.lastIP)}</td>
-                    <td>
-                        <button class="btn btn-primary btn-sm reset-trial-btn" data-device-id="${encodeDataValue(device.deviceId)}" data-tasks="10" style="margin-bottom: 5px;">重置为10次</button>
-                        <button class="btn btn-secondary btn-sm reset-trial-btn" data-device-id="${encodeDataValue(device.deviceId)}" data-tasks="20" style="margin-bottom: 5px;">重置为20次</button>
-                        <button class="btn btn-danger btn-sm delete-trial-btn" data-device-id="${encodeDataValue(device.deviceId)}">删除设备</button>
-                    </td>
-                </tr>`;
-            });
-            
-            html += '</tbody></table>';
-            
-            if (totalPages > 1) {
-                html += '<div style="margin-top: 20px; text-align: center;">';
-                html += `<button class="btn btn-primary" onclick="changeTrialPage(${currentTrialPage - 1})" ${currentTrialPage === 1 ? 'disabled' : ''}>上一页</button>`;
-                html += `<span style="margin: 0 15px;">第 ${currentTrialPage} / ${totalPages} 页 (共 ${allTrialDevices.length} 条)</span>`;
-                html += `<button class="btn btn-primary" onclick="changeTrialPage(${currentTrialPage + 1})" ${currentTrialPage === totalPages ? 'disabled' : ''}>下一页</button>`;
-                html += '</div>';
-            }
-            
-            if (allTrialDevices.length === 0) {
-                html = '<p style="text-align: center; color: #999; padding: 40px;">暂无试用设备</p>';
-            }
-            
-            tableEl.innerHTML = html;
-
-            tableEl.querySelectorAll('.reset-trial-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    resetTrialTasks(
-                        decodeDataValue(btn.dataset.deviceId),
-                        Number(btn.dataset.tasks)
-                    );
-                });
-            });
-
-            tableEl.querySelectorAll('.delete-trial-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    deleteTrialDevice(decodeDataValue(btn.dataset.deviceId));
-                });
-            });
-        }
-
-        async function loadLogs() {
-            const result = await apiRequest('getLogs', { page: 1, pageSize: 0 });
-            const tableEl = document.getElementById('logsTable');
-            
-            if (!result.success) {
-                tableEl.innerHTML = '<p>加载失败：' + escapeHtml(result.error || '未知错误') + '</p>';
-                return;
-            }
-            
-            const filterAction = document.getElementById('filterLogAction')?.value || 'all';
-            allLogs = result.data.logs || [];
-            
-            if (filterAction !== 'all') {
-                allLogs = allLogs.filter(log => log.action === filterAction);
-            }
-            
-            currentLogsPage = 1;
-            renderLogs();
-        }
-
-        function renderLogs() {
-            const start = (currentLogsPage - 1) * logsPageSize;
-            const end = start + logsPageSize;
-            const pagedLogs = allLogs.slice(start, end);
-            const totalPages = Math.ceil(allLogs.length / logsPageSize);
-            const tableEl = document.getElementById('logsTable');
-            
-            let html = '<table><thead><tr><th>时间</th><th>操作</th><th>详情</th><th>IP地址</th></tr></thead><tbody>';
-            
-            pagedLogs.forEach(log => {
-                let actionText = escapeHtml(log.action);
-                let details = escapeHtml(JSON.stringify(log));
-                
-                switch(log.action) {
-                    case 'activate':
-                        actionText = '<span class="badge badge-success">密钥激活</span>';
-                        details = `密钥: ${escapeHtml(log.license)}<br>设备: ${escapeHtml(log.deviceId)}`;
-                        break;
-                    case 'trial_activate':
-                        actionText = '<span class="badge badge-warning">试用激活</span>';
-                        details = `设备: ${escapeHtml(log.deviceId)}`;
-                        break;
-                    case 'trial_task':
-                        actionText = '<span class="badge badge-warning">试用任务</span>';
-                        details = `设备: ${escapeHtml(log.deviceId)}<br>剩余: ${escapeHtml(log.remainingTasks)} 次`;
-                        break;
-                    case 'batch_generate':
-                        actionText = '<span class="badge badge-success">批量生成</span>';
-                        details = `数量: ${escapeHtml(log.count)} 个<br>期限: ${escapeHtml(log.days)} 天`;
-                        break;
-                    case 'delete':
-                        actionText = '<span class="badge badge-danger">删除密钥</span>';
-                        details = `密钥: ${escapeHtml(log.license)}`;
-                        break;
-                    case 'reset_trial_tasks':
-                        actionText = '<span class="badge badge-primary">重置试用</span>';
-                        details = `设备: ${escapeHtml(log.deviceId)}<br>次数: ${escapeHtml(log.oldTasks)} → ${escapeHtml(log.newTasks)}`;
-                        break;
-                    case 'delete_trial_device':
-                        actionText = '<span class="badge badge-danger">删除设备</span>';
-                        details = `设备: ${escapeHtml(log.deviceId)}<br>剩余: ${escapeHtml(log.remainingTasks)} 次`;
-                        break;
-                    case 'set_expired':
-                        actionText = '<span class="badge badge-danger">设置过期</span>';
-                        details = `密钥: ${escapeHtml(log.license)}`;
-                        break;
-                    default:
-                        break;
-                }
-                
-                html += `<tr>
-                    <td style="white-space: nowrap;">${escapeHtml(log.timestamp)}</td>
-                    <td>${actionText}</td>
-                    <td style="font-size: 11px;">${details}</td>
-                    <td>${escapeHtml(log.ip || '-')}</td>
-                </tr>`;
-            });
-            
-            html += '</tbody></table>';
-            
-            if (totalPages > 1) {
-                html += '<div style="margin-top: 20px; text-align: center;">';
-                html += `<button class="btn btn-primary" onclick="changeLogsPage(${currentLogsPage - 1})" ${currentLogsPage === 1 ? 'disabled' : ''}>上一页</button>`;
-                html += `<span style="margin: 0 15px;">第 ${currentLogsPage} / ${totalPages} 页 (共 ${allLogs.length} 条)</span>`;
-                html += `<button class="btn btn-primary" onclick="changeLogsPage(${currentLogsPage + 1})" ${currentLogsPage === totalPages ? 'disabled' : ''}>下一页</button>`;
-                html += '</div>';
-            }
-            
-            if (allLogs.length === 0) {
-                html = '<p style="text-align: center; color: #999; padding: 40px;">暂无操作日志</p>';
-            }
-            
-            tableEl.innerHTML = html;
-        }
-
-        async function loadGlobalConfig() {
-            const result = await apiRequest('getGlobalConfig');
-            
-            if (result.success) {
-                const config = result.data;
-                document.getElementById('globalPurchaseUrl').value = config.purchaseUrl || 'https://kkw.8u9.top/zsxqhelper';
-                document.getElementById('globalPopupMessage').value = config.globalPopupMessage || '';
-                document.getElementById('defaultTrialTasks').value = config.defaultTrialTasks || 10;
-            } else {
-                alert('❌ 加载配置失败：' + result.error);
-            }
-        }
+        
 
         // 保存全局配置
-        async function saveGlobalConfig() {
-            const purchaseUrl = document.getElementById('globalPurchaseUrl').value.trim();
-            const globalPopupMessage = document.getElementById('globalPopupMessage').value.trim();
-            const defaultTrialTasks = parseInt(document.getElementById('defaultTrialTasks').value) || 10;
-            
-            if (!purchaseUrl) {
-                alert('❌ 请输入购买链接');
-                return;
-            }
-            
-            if (defaultTrialTasks < 1 || defaultTrialTasks > 1000) {
-                alert('❌ 试用次数必须在 1-1000 之间');
-                return;
-            }
-            
-            // 验证URL格式
-            try {
-                new URL(purchaseUrl);
-            } catch (e) {
-                alert('❌ 请输入有效的URL格式（如：https://example.com）');
-                return;
-            }
-            
-            const result = await apiRequest('updateGlobalConfig', { 
-                purchaseUrl,
-                globalPopupMessage,
-                defaultTrialTasks
-            });
-            
-            if (result.success) {
-                alert('✅ 全局配置已保存！\n\n' + 
-                      '• 所有"购买"、"升级"按钮将使用此链接\n' +
-                      (globalPopupMessage ? '• 所有用户打开插件时将看到弹窗信息\n' : '• 已清空全局弹窗信息\n') +
-                      `• 新用户试用次数：${defaultTrialTasks} 次`);
-            } else {
-                alert('❌ 保存失败：' + result.error);
-            }
-        }
+        
 
         // ==================== 测试工具函数 ====================
 
         // 加载功能配置
-        async function loadFeatureConfig() {
-            const result = await apiRequest('getFeatureConfig');
-            
-            if (result.success) {
-                const config = result.data;
-                document.getElementById('feature-export').checked = config.export !== false;
-                document.getElementById('feature-download').checked = config.download !== false;
-                document.getElementById('feature-turboDownload').checked = config.turboDownload !== false;
-                document.getElementById('feature-search').checked = config.search !== false;
-                document.getElementById('feature-searchResult').checked = config.searchResult !== false;
-                document.getElementById('feature-column').checked = config.column !== false;
-                document.getElementById('feature-digest').checked = config.digest !== false;
-                document.getElementById('feature-backup').checked = config.backup !== false;
-            }
-        }
+        
 
         // 保存功能配置
         async function saveFeatureConfig() {
@@ -1211,89 +409,10 @@
         // ==================== 测试工具函数 ====================
 
         // 测试激活
-        async function testActivate() {
-            const license = document.getElementById('testLicense').value.trim();
-            const deviceId = document.getElementById('testDeviceId').value.trim() || 
-                            'test-' + Date.now() + '-' + Math.random().toString(36).substring(2, 15);
-            const resultDiv = document.getElementById('testActivateResult');
-            
-            if (!license) {
-                resultDiv.innerHTML = '<div class="alert alert-error">❌ 请输入密钥</div>';
-                return;
-            }
-            
-            resultDiv.innerHTML = '<div class="alert alert-info">⏳ 测试中...</div>';
-            
-            const result = await apiRequest('activate', { license, deviceId });
-            
-            if (result.success) {
-                const data = result.data;
-                let html = '<div class="alert alert-success">';
-                html += '<h4>✅ 激活成功</h4>';
-                html += '<table class="info-table">';
-                html += `<tr><td>状态</td><td><strong>${data.status === 'trial' ? '试用' : '正式授权'}</strong></td></tr>`;
-                html += `<tr><td>设备ID</td><td><code>${escapeHtml(deviceId)}</code></td></tr>`;
-                
-                html += `<tr><td>娴嬭瘯鍔熻兘</td><td>${escapeHtml(feature || '閫氱敤鏍￠獙')}</td></tr>`;
-
-                if (data.status === 'trial') {
-                    html += `<tr><td>剩余次数</td><td><strong>${escapeHtml(data.remainingTasks)}</strong> 次</td></tr>`;
-                } else {
-                    html += `<tr><td>是否永久</td><td>${data.isPermanent ? '<span style="color: #10b981;">✅ 永久授权</span>' : '❌ 时间授权'}</td></tr>`;
-                    if (!data.isPermanent && data.expireDate) {
-                        html += `<tr><td>到期日期</td><td><strong>${escapeHtml(data.expireDate)}</strong></td></tr>`;
-                    }
-                    html += `<tr><td>无限制</td><td>${data.unlimited ? '✅ 是' : '❌ 否'}</td></tr>`;
-                }
-                
-                html += '</table></div>';
-                resultDiv.innerHTML = html;
-            } else {
-                resultDiv.innerHTML = `<div class="alert alert-error"><h4>❌ 激活失败</h4><p>${escapeHtml(result.message || result.error || '未知错误')}</p></div>`;
-            }
-        }
+        
 
         // 测试任务权限
-        async function testTaskPermission() {
-            const deviceId = document.getElementById('testTaskDeviceId').value.trim();
-            const resultDiv = document.getElementById('testTaskResult');
-            
-            if (!deviceId) {
-                resultDiv.innerHTML = '<div class="alert alert-error">❌ 请输入设备ID</div>';
-                return;
-            }
-            
-            resultDiv.innerHTML = '<div class="alert alert-info">⏳ 测试中...</div>';
-            
-            const feature = document.getElementById('testTaskFeature')?.value.trim() || '';
-            const payload = { deviceId };
-            if (feature) {
-                payload.feature = feature;
-            }
-
-            const result = await apiRequest('checkTask', payload);
-            
-            if (result.success) {
-                const data = result.data;
-                let html = '<div class="alert alert-success">';
-                html += '<h4>✅ 有权限执行任务</h4>';
-                html += '<table class="info-table">';
-                html += `<tr><td>状态</td><td><strong>${data.status === 'trial' ? '试用' : '正式授权'}</strong></td></tr>`;
-                
-                if (data.status === 'trial') {
-                    html += `<tr><td>剩余次数</td><td><strong>${escapeHtml(data.remainingTasks)}</strong> 次</td></tr>`;
-                    html += `<tr><td>提示</td><td style="color: #f59e0b;">⚠️ 本次测试已扣除1次试用次数</td></tr>`;
-                } else {
-                    html += `<tr><td>是否永久</td><td>${data.isPermanent ? '<span style="color: #10b981;">✅ 永久授权</span>' : '❌ 时间授权'}</td></tr>`;
-                    html += `<tr><td>无限制</td><td>${data.unlimited ? '✅ 是' : '❌ 否'}</td></tr>`;
-                }
-                
-                html += '</table></div>';
-                resultDiv.innerHTML = html;
-            } else {
-                resultDiv.innerHTML = `<div class="alert alert-error"><h4>❌ 无权限</h4><p>${escapeHtml(result.message || result.error || '未知错误')}</p></div>`;
-            }
-        }
+        
 
         // 测试试用
         async function testTrial() {
@@ -1587,116 +706,10 @@
             return [...new Set([...knownFeatures, ...foundFeatures])];
         }
 
-        function renderAllLicensesStats(data, period) {
-            const contentDiv = document.getElementById('statsContent');
-            
-            if (Object.keys(data).length === 0) {
-                contentDiv.innerHTML = '<p style="text-align: center; color: #999; padding: 40px;">暂无使用统计数据</p>';
-                return;
-            }
-            
-            let html = '<table><thead><tr><th>密钥</th>';
-            
-            const features = collectStatsFeatures(data, period, false);
-            
-            features.forEach(f => {
-                html += `<th>${getStatsFeatureLabel(f)}</th>`;
-            });
-            
-            html += '<th>总计</th></tr></thead><tbody>';
-            
-            // 遍历所有密钥
-            for (const [lic, stats] of Object.entries(data)) {
-                html += `<tr><td style="min-width: 280px;"><button type="button" class="stats-license-link" data-license="${encodeDataValue(lic)}" title="点击编辑密钥配置或限制功能" style="font-family: monospace; font-size: 11px; white-space: normal; word-break: break-all; line-height: 1.5; border: none; background: transparent; color: #2563eb; padding: 0; text-align: left; cursor: pointer;">${escapeHtml(lic)}</button></td>`;
-                
-                let total = 0;
-                let periodData = {};
-                
-                if (period === 'total') {
-                    periodData = stats.total || {};
-                } else if (period === 'monthly') {
-                    // 汇总所有月份
-                    periodData = {};
-                    for (const monthData of Object.values(stats.monthly || {})) {
-                        for (const [feature, count] of Object.entries(monthData || {})) {
-                            periodData[feature] = (periodData[feature] || 0) + count;
-                        }
-                    }
-                } else if (period === 'daily') {
-                    // 汇总所有天
-                    periodData = {};
-                    for (const dayData of Object.values(stats.daily || {})) {
-                        for (const [feature, count] of Object.entries(dayData || {})) {
-                            periodData[feature] = (periodData[feature] || 0) + count;
-                        }
-                    }
-                }
-                
-                features.forEach(f => {
-                    const count = periodData[f] || 0;
-                    total += count;
-                    html += `<td>${count}</td>`;
-                });
-                
-                html += `<td><strong>${total}</strong></td></tr>`;
-            }
-            
-            html += '</tbody></table>';
-            contentDiv.innerHTML = html;
-            contentDiv.querySelectorAll('.stats-license-link').forEach((button) => {
-                button.addEventListener('click', () => {
-                    openStatsLicenseConfig(decodeDataValue(button.dataset.license || ''));
-                });
-            });
-        }
+        
         
         // 渲染单个密钥的统计
-        function renderSingleLicenseStats(data, license, period) {
-            const contentDiv = document.getElementById('statsContent');
-            
-            let html = '<table><thead><tr><th>时间</th>';
-            
-            const features = collectStatsFeatures(data, period, true);
-            const columnCount = features.length + 2;
-            features.forEach(f => {
-                html += `<th>${getStatsFeatureLabel(f)}</th>`;
-            });
-            
-            html += '<th>总计</th></tr></thead><tbody>';
-            
-            if (period === 'total') {
-                // 显示总计
-                html += '<tr><td><strong>总计</strong></td>';
-                let total = 0;
-                features.forEach(f => {
-                    const count = data[f] || 0;
-                    total += count;
-                    html += `<td>${count}</td>`;
-                });
-                html += `<td><strong>${total}</strong></td></tr>`;
-            } else {
-                // 按时间排序显示
-                const timeData = Object.entries(data).sort((a, b) => b[0].localeCompare(a[0]));
-                
-                if (timeData.length === 0) {
-                    html += `<tr><td colspan="${columnCount}" style="text-align: center; color: #999;">暂无数据</td></tr>`;
-                } else {
-                    timeData.forEach(([time, counts]) => {
-                        html += `<tr><td>${time}</td>`;
-                        let total = 0;
-                        features.forEach(f => {
-                            const count = counts[f] || 0;
-                            total += count;
-                            html += `<td>${count}</td>`;
-                        });
-                        html += `<td><strong>${total}</strong></td></tr>`;
-                    });
-                }
-            }
-            
-            html += '</tbody></table>';
-            contentDiv.innerHTML = html;
-        }
+        
 
         function exportCurrentStatsView() {
             const { license, period, data } = currentStatsView || {};
@@ -1879,73 +892,10 @@
         }
         
         // 保存全局限制配置
-        async function saveGlobalLimits() {
-            const features = ['export', 'download', 'turboDownload', 'search', 'searchResult', 'column', 'digest', 'backup'];
-            const config = { global: {}, licenses: {} };
-            
-            features.forEach(feature => {
-                const enabled = document.getElementById(`limit-${feature}-enabled`).checked;
-                const limit = parseInt(document.getElementById(`limit-${feature}-count`).value) || 0;
-                const period = document.getElementById(`limit-${feature}-period`).value;
-                
-                config.global[feature] = { enabled, limit, period };
-            });
-            
-            const result = await apiRequest('updateFeatureLimitsConfig', { config });
-            
-            if (result.success) {
-                alert('✅ 全局功能限制配置已保存！');
-                closeLimitsModal();
-            } else {
-                alert('❌ 保存失败：' + result.error);
-            }
-        }
+        
         
         // 显示单个密钥限制配置弹窗
-        async function showLicenseLimitsConfig() {
-            const license = prompt('请输入要配置的密钥：');
-            if (!license) return;
-            
-            // 先获取全局配置和该密钥的配置
-            const result = await apiRequest('getFeatureLimitsConfig');
-            
-            if (!result.success) {
-                alert('❌ 加载配置失败：' + result.error);
-                return;
-            }
-            
-            const globalConfig = result.data.global;
-            const licenseConfig = result.data.licenses[license] || {};
-            
-            // 创建弹窗HTML
-            const modalHtml = `
-                <div id="licenseLimitsModal" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 10000;">
-                    <div style="background: white; border-radius: 12px; padding: 30px; max-width: 800px; width: 90%; max-height: 90vh; overflow-y: auto;">
-                        <h2 style="margin-bottom: 10px;">🔑 单个密钥限制配置</h2>
-                        <p style="color: #666; margin-bottom: 5px;">密钥：<code style="background: #f3f4f6; padding: 4px 8px; border-radius: 4px;">${license}</code></p>
-                        <p style="color: #666; margin-bottom: 20px; font-size: 13px;">💡 留空或设置为 0 将使用全局配置</p>
-                        
-                        <div style="display: grid; gap: 20px;">
-                            ${createLicenseFeatureLimitRow('export', '📤 帖子导出', globalConfig.export, licenseConfig.export)}
-                            ${createLicenseFeatureLimitRow('download', '📥 文件下载', globalConfig.download, licenseConfig.download)}
-                            ${createLicenseFeatureLimitRow('turboDownload', '🚀 极速下载', globalConfig.turboDownload, licenseConfig.turboDownload)}
-                            ${createLicenseFeatureLimitRow('search', '🔍 关键词搜索', globalConfig.search, licenseConfig.search)}
-                            ${createLicenseFeatureLimitRow('searchResult', '📋 导出搜索框', globalConfig.searchResult, licenseConfig.searchResult)}
-                            ${createLicenseFeatureLimitRow('column', '📚 专栏导出', globalConfig.column, licenseConfig.column)}
-                            ${createLicenseFeatureLimitRow('digest', '⭐ 精华导出', globalConfig.digest, licenseConfig.digest)}
-                            ${createLicenseFeatureLimitRow('backup', '📦 全量备份', globalConfig.backup, licenseConfig.backup)}
-                        </div>
-                        
-                        <div style="margin-top: 30px; display: flex; gap: 10px; justify-content: flex-end;">
-                            <button class="btn btn-secondary" onclick="closeLicenseLimitsModal()">取消</button>
-                            <button class="btn btn-primary" onclick="saveLicenseLimits('${license}')">💾 保存配置</button>
-                        </div>
-                    </div>
-                </div>
-            `;
-            
-            document.body.insertAdjacentHTML('beforeend', modalHtml);
-        }
+        
         
         // 创建单个密钥功能限制配置行
         function createLicenseFeatureLimitRow(feature, label, globalConfig, licenseConfig) {
@@ -1992,48 +942,35 @@
         }
         
         // 保存单个密钥限制配置
-        async function saveLicenseLimits(license) {
-            const features = ['export', 'download', 'turboDownload', 'search', 'searchResult', 'column', 'digest', 'backup'];
-            
-            // 先获取当前完整配置
-            const currentResult = await apiRequest('getFeatureLimitsConfig');
-            if (!currentResult.success) {
-                alert('❌ 加载配置失败：' + currentResult.error);
-                return;
-            }
-            
-            const config = currentResult.data;
-            config.licenses[license] = {};
-            
-            features.forEach(feature => {
-                const enabled = document.getElementById(`lic-limit-${feature}-enabled`).checked;
-                const limit = parseInt(document.getElementById(`lic-limit-${feature}-count`).value) || 0;
-                const period = document.getElementById(`lic-limit-${feature}-period`).value;
-                
-                // 只保存有效的覆盖配置（不是 0 或 unlimited）
-                if (limit !== 0 || period !== 'unlimited' || !enabled) {
-                    config.licenses[license][feature] = { enabled, limit, period };
-                }
-            });
-            
-            // 如果没有任何覆盖配置，删除该密钥的配置
-            if (Object.keys(config.licenses[license]).length === 0) {
-                delete config.licenses[license];
-            }
-            
-            const result = await apiRequest('updateFeatureLimitsConfig', { config });
-            
-            if (result.success) {
-                alert('✅ 密钥限制配置已保存！');
-                closeLicenseLimitsModal();
-            } else {
-                alert('❌ 保存失败：' + result.error);
-            }
-        }
+        
 
         let filteredLicensesCache = [];
         let filteredTrialDevices = [];
+        let allDeviceInventory = [];
+        let filteredDeviceInventory = [];
+        let currentDevicePage = 1;
+        const devicePageSize = 20;
         let allLogsRaw = [];
+        let currentDefaultTrialTasks = 10;
+
+        function getConfiguredDefaultTrialTasks() {
+            return currentDefaultTrialTasks;
+        }
+
+        async function refreshTrialDefaultsFromServer() {
+            const configResult = await apiRequest('getGlobalConfig');
+            if (!configResult.success) {
+                return currentDefaultTrialTasks;
+            }
+
+            currentDefaultTrialTasks = parseInt(configResult.data?.defaultTrialTasks, 10) || 10;
+            const defaultTrialTasksInput = document.getElementById('defaultTrialTasks');
+            if (defaultTrialTasksInput) {
+                defaultTrialTasksInput.value = currentDefaultTrialTasks;
+            }
+
+            return currentDefaultTrialTasks;
+        }
 
         function showTab(tabName) {
             document.querySelectorAll('.tab').forEach(tab => {
@@ -2056,6 +993,7 @@
             else if (tabName === 'licenses') loadLicenses();
             else if (tabName === 'config') loadGlobalConfig();
             else if (tabName === 'trial') loadTrialDevices();
+            else if (tabName === 'devices') loadDeviceInventory();
             else if (tabName === 'logs') loadLogs();
             else if (tabName === 'features') loadFeatureConfig();
             else if (tabName === 'stats') {
@@ -2064,160 +1002,11 @@
             }
         }
 
-        async function loadLicenses() {
-            const result = await apiRequest('listAllLicenses');
-            const tableEl = document.getElementById('licensesTable');
+        
 
-            if (!result.success) {
-                tableEl.innerHTML = '<p>加载失败：' + escapeHtml(result.error || '未知错误') + '</p>';
-                updatePageMeta('licensesMeta', '加载密钥数据失败');
-                return;
-            }
+        
 
-            allLicensesCache = result.data.licenses || [];
-            filterLicenses();
-        }
-
-        function filterLicenses() {
-            const statusFilter = document.getElementById('filterStatus')?.value || 'all';
-            const daysFilter = document.getElementById('filterDays')?.value || 'all';
-            const keyword = (document.getElementById('searchLicense')?.value || '').trim().toLowerCase();
-
-            let filtered = [...allLicensesCache];
-
-            if (statusFilter !== 'all') {
-                if (statusFilter === 'expired') {
-                    filtered = filtered.filter(l => l.isExpired);
-                } else {
-                    filtered = filtered.filter(l => l.status === statusFilter && !l.isExpired);
-                }
-            }
-
-            if (daysFilter !== 'all') {
-                filtered = filtered.filter(l => l.days === parseInt(daysFilter, 10));
-            }
-
-            if (keyword) {
-                filtered = filtered.filter((l) => {
-                    const haystack = [
-                        l.license,
-                        l.deviceId,
-                        l.created,
-                        l.activatedAt,
-                        l.expire,
-                        l.popupMessage
-                    ].join(' ').toLowerCase();
-                    return haystack.includes(keyword);
-                });
-            }
-
-            filteredLicensesCache = filtered;
-            currentLicensesPage = 1;
-            renderLicenses();
-        }
-
-        function renderLicenses(licenses = filteredLicensesCache) {
-            const tableEl = document.getElementById('licensesTable');
-            updatePageMeta('licensesMeta', `共 ${allLicensesCache.length} 个密钥，当前筛选后 ${licenses.length} 个`);
-
-            if (licenses.length === 0) {
-                tableEl.innerHTML = '<p style="text-align: center; color: #999; padding: 40px;">没有匹配的密钥记录</p>';
-                return;
-            }
-
-            const start = (currentLicensesPage - 1) * licensesPageSize;
-            const end = start + licensesPageSize;
-            const pagedLicenses = licenses.slice(start, end);
-            const totalPages = Math.ceil(licenses.length / licensesPageSize);
-
-            let html = '<table><thead><tr><th>密钥</th><th>期限</th><th>状态</th><th>设备ID</th><th>创建时间</th><th>激活时间</th><th>过期时间</th><th>剩余天数</th><th>配置</th><th>操作</th></tr></thead><tbody>';
-
-            pagedLicenses.forEach(lic => {
-                const now = Date.now();
-                const isPermanent = lic.days === 0;
-                const daysLeft = isPermanent ? Infinity : (lic.expireTime ? Math.ceil((lic.expireTime - now) / (1000 * 60 * 60 * 24)) : lic.days);
-
-                let statusBadge = '<span class="badge badge-secondary">未知</span>';
-                if (lic.isExpired) {
-                    statusBadge = '<span class="badge badge-danger">已过期</span>';
-                } else if (lic.status === 'unused') {
-                    statusBadge = '<span class="badge badge-success">未使用</span>';
-                } else if (lic.status === 'activated') {
-                    statusBadge = '<span class="badge badge-warning">已激活</span>';
-                }
-
-                let daysLeftBadge = '';
-                if (isPermanent) {
-                    daysLeftBadge = '<span class="badge badge-success">永久</span>';
-                } else if (lic.status === 'unused') {
-                    daysLeftBadge = `<span class="badge badge-success">激活后${escapeHtml(lic.days)}天</span>`;
-                } else if (!lic.isExpired) {
-                    if (daysLeft <= 7) {
-                        daysLeftBadge = `<span class="badge badge-danger">${escapeHtml(daysLeft)}天</span>`;
-                    } else if (daysLeft <= 30) {
-                        daysLeftBadge = `<span class="badge badge-warning">${escapeHtml(daysLeft)}天</span>`;
-                    } else {
-                        daysLeftBadge = `<span class="badge badge-success">${escapeHtml(daysLeft)}天</span>`;
-                    }
-                }
-
-                const periodText = isPermanent ? '永久' : `${escapeHtml(lic.days)}天`;
-                const activatedTime = lic.status === 'unused' ? '-' : escapeHtml(lic.activatedAt || '-');
-                const expireDisplay = lic.status === 'unused' ? '待激活' : escapeHtml(lic.expire);
-                const hasConfig = !!lic.popupMessage;
-                const configBadge = hasConfig ? '<span class="badge badge-success">已配置</span>' : '<span class="badge badge-secondary">未配置</span>';
-
-                html += `<tr>
-                    <td style="font-family: monospace; font-size: 11px;">${escapeHtml(lic.license)}</td>
-                    <td>${periodText}</td>
-                    <td>${statusBadge}</td>
-                    <td style="font-family: monospace; font-size: 10px;">${escapeHtml(lic.deviceId)}</td>
-                    <td>${escapeHtml(lic.created)}</td>
-                    <td>${activatedTime}</td>
-                    <td>${expireDisplay}</td>
-                    <td>${daysLeftBadge}</td>
-                    <td>${configBadge}</td>
-                    <td>
-                        <button class="btn btn-sm btn-primary edit-license-config-btn" data-license="${encodeDataValue(lic.license)}" data-message="${encodeDataValue(lic.popupMessage || '')}">配置</button>
-                        <button class="btn btn-sm btn-secondary edit-license-limits-btn" data-license="${encodeDataValue(lic.license)}">限制</button>
-                        <button class="btn btn-sm btn-danger delete-license-btn" data-license="${encodeDataValue(lic.license)}">删除</button>
-                    </td>
-                </tr>`;
-            });
-
-            html += '</tbody></table>';
-
-            if (totalPages > 1) {
-                html += '<div style="margin-top: 20px; text-align: center;">';
-                html += `<button class="btn btn-primary" onclick="changeLicensesPage(${currentLicensesPage - 1})" ${currentLicensesPage === 1 ? 'disabled' : ''}>上一页</button>`;
-                html += `<span style="margin: 0 15px;">第 ${currentLicensesPage} / ${totalPages} 页 (共 ${licenses.length} 条)</span>`;
-                html += `<button class="btn btn-primary" onclick="changeLicensesPage(${currentLicensesPage + 1})" ${currentLicensesPage === totalPages ? 'disabled' : ''}>下一页</button>`;
-                html += '</div>';
-            }
-
-            tableEl.innerHTML = html;
-
-            tableEl.querySelectorAll('.edit-license-config-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    editLicenseConfig(
-                        decodeDataValue(btn.dataset.license),
-                        decodeDataValue(btn.dataset.message)
-                    );
-                });
-            });
-
-            tableEl.querySelectorAll('.edit-license-limits-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    showLicenseLimitsConfig(decodeDataValue(btn.dataset.license));
-                });
-            });
-
-            tableEl.querySelectorAll('.delete-license-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    deleteLicense(decodeDataValue(btn.dataset.license));
-                });
-            });
-        }
+        
 
         function changeLicensesPage(page) {
             const totalPages = Math.ceil(filteredLicensesCache.length / licensesPageSize);
@@ -2272,20 +1061,6 @@
             showToast(`已导出 ${exportList.length} 个密钥`);
         }
 
-        async function loadTrialDevices() {
-            const result = await apiRequest('listTrialDevices');
-            const tableEl = document.getElementById('trialTable');
-
-            if (!result.success) {
-                tableEl.innerHTML = '<p>加载失败：' + escapeHtml(result.error || '未知错误') + '</p>';
-                updatePageMeta('trialMeta', '加载试用设备失败');
-                return;
-            }
-
-            allTrialDevices = result.data.devices || [];
-            filterTrialDevices();
-        }
-
         function filterTrialDevices() {
             const keyword = (document.getElementById('searchTrialDevice')?.value || '').trim().toLowerCase();
 
@@ -2305,65 +1080,6 @@
             renderTrialDevices();
         }
 
-        function renderTrialDevices(devices = filteredTrialDevices) {
-            const tableEl = document.getElementById('trialTable');
-            updatePageMeta('trialMeta', `共 ${allTrialDevices.length} 台试用设备，当前筛选后 ${devices.length} 台`);
-
-            if (devices.length === 0) {
-                tableEl.innerHTML = '<p style="text-align: center; color: #999; padding: 40px;">没有匹配的试用设备</p>';
-                return;
-            }
-
-            const start = (currentTrialPage - 1) * trialPageSize;
-            const end = start + trialPageSize;
-            const pagedDevices = devices.slice(start, end);
-            const totalPages = Math.ceil(devices.length / trialPageSize);
-
-            let html = '<table><thead><tr><th>设备ID</th><th>剩余次数</th><th>首次使用</th><th>最后使用</th><th>IP地址</th><th>操作</th></tr></thead><tbody>';
-
-            pagedDevices.forEach(device => {
-                html += `<tr>
-                    <td style="font-family: monospace; font-size: 11px;">${escapeHtml(device.deviceId)}</td>
-                    <td><span class="badge ${device.remainingTasks > 5 ? 'badge-success' : device.remainingTasks > 0 ? 'badge-warning' : 'badge-danger'}">${escapeHtml(device.remainingTasks)} 次</span></td>
-                    <td>${escapeHtml(device.firstSeen)}</td>
-                    <td>${escapeHtml(device.lastSeen)}</td>
-                    <td>${escapeHtml(device.lastIP)}</td>
-                    <td>
-                        <button class="btn btn-primary btn-sm reset-trial-btn" data-device-id="${encodeDataValue(device.deviceId)}" data-tasks="10" style="margin-bottom: 5px;">重置为10次</button>
-                        <button class="btn btn-secondary btn-sm reset-trial-btn" data-device-id="${encodeDataValue(device.deviceId)}" data-tasks="20" style="margin-bottom: 5px;">重置为20次</button>
-                        <button class="btn btn-danger btn-sm delete-trial-btn" data-device-id="${encodeDataValue(device.deviceId)}">删除设备</button>
-                    </td>
-                </tr>`;
-            });
-
-            html += '</tbody></table>';
-
-            if (totalPages > 1) {
-                html += '<div style="margin-top: 20px; text-align: center;">';
-                html += `<button class="btn btn-primary" onclick="changeTrialPage(${currentTrialPage - 1})" ${currentTrialPage === 1 ? 'disabled' : ''}>上一页</button>`;
-                html += `<span style="margin: 0 15px;">第 ${currentTrialPage} / ${totalPages} 页 (共 ${devices.length} 条)</span>`;
-                html += `<button class="btn btn-primary" onclick="changeTrialPage(${currentTrialPage + 1})" ${currentTrialPage === totalPages ? 'disabled' : ''}>下一页</button>`;
-                html += '</div>';
-            }
-
-            tableEl.innerHTML = html;
-
-            tableEl.querySelectorAll('.reset-trial-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    resetTrialTasks(
-                        decodeDataValue(btn.dataset.deviceId),
-                        Number(btn.dataset.tasks)
-                    );
-                });
-            });
-
-            tableEl.querySelectorAll('.delete-trial-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    deleteTrialDevice(decodeDataValue(btn.dataset.deviceId));
-                });
-            });
-        }
-
         function changeTrialPage(page) {
             const totalPages = Math.ceil(filteredTrialDevices.length / trialPageSize);
             if (page < 1 || page > totalPages) return;
@@ -2371,19 +1087,202 @@
             renderTrialDevices();
         }
 
-        async function loadLogs() {
-            const result = await apiRequest('getLogs', { page: 1, pageSize: 1000 });
-            const tableEl = document.getElementById('logsTable');
+        async function loadDeviceInventory() {
+            ensureDeviceManagementUI();
+            const result = await apiRequest('listDeviceInventory');
+            const tableEl = document.getElementById('deviceTable');
+
+            if (!tableEl) return;
 
             if (!result.success) {
                 tableEl.innerHTML = '<p>加载失败：' + escapeHtml(result.error || '未知错误') + '</p>';
-                updatePageMeta('logsMeta', '加载操作日志失败');
+                updatePageMeta('deviceMeta', '加载设备ID失败');
                 return;
             }
 
-            allLogsRaw = result.data.logs || [];
-            filterLogs();
+            allDeviceInventory = result.data.devices || [];
+            filterDeviceInventory();
         }
+
+        function filterDeviceInventory() {
+            const keyword = (document.getElementById('searchDeviceInventory')?.value || '').trim().toLowerCase();
+
+            filteredDeviceInventory = keyword
+                ? allDeviceInventory.filter((device) => {
+                    const haystack = [
+                        device.deviceId,
+                        device.sourceLabel,
+                        device.licensesPreview,
+                        device.lastIP,
+                        device.lastSeen,
+                        device.restrictionReason,
+                        device.restrictionNote
+                    ].join(' ').toLowerCase();
+                    return haystack.includes(keyword);
+                })
+                : [...allDeviceInventory];
+
+            currentDevicePage = 1;
+            renderDeviceInventory();
+        }
+
+        function renderDeviceInventory(devices = filteredDeviceInventory) {
+            const tableEl = document.getElementById('deviceTable');
+            if (!tableEl) return;
+
+            updatePageMeta('deviceMeta', `共 ${allDeviceInventory.length} 个设备ID，当前筛选后 ${devices.length} 个`);
+
+            if (!devices.length) {
+                tableEl.innerHTML = '<p style="text-align: center; color: #999; padding: 40px;">暂无设备ID数据</p>';
+                return;
+            }
+
+            const start = (currentDevicePage - 1) * devicePageSize;
+            const end = start + devicePageSize;
+            const pagedDevices = devices.slice(start, end);
+            const totalPages = Math.ceil(devices.length / devicePageSize);
+
+            let html = '<table><thead><tr><th>设备ID</th><th>来源</th><th>授权绑定</th><th>试用</th><th>限制状态</th><th>最后使用</th><th>IP</th><th>操作</th></tr></thead><tbody>';
+
+            pagedDevices.forEach((device) => {
+                const actions = [];
+                if (device.restricted) {
+                    actions.push(`<button class="btn btn-secondary btn-sm unrestrict-device-btn" data-device-id="${encodeDataValue(device.deviceId)}" style="margin-bottom: 5px;">解除限制</button>`);
+                } else {
+                    actions.push(`<button class="btn btn-danger btn-sm restrict-device-btn" data-device-id="${encodeDataValue(device.deviceId)}" style="margin-bottom: 5px;">限制设备</button>`);
+                }
+
+                if (device.licenseCount > 0 || device.hasTrialRecord) {
+                    actions.push(`<button class="btn btn-warning btn-sm delete-device-records-btn" data-device-id="${encodeDataValue(device.deviceId)}">删除记录</button>`);
+                }
+
+                html += `<tr>
+                    <td style="font-family: monospace; font-size: 11px;">${escapeHtml(device.deviceId)}</td>
+                    <td>${escapeHtml(device.sourceLabel)}</td>
+                    <td>${device.licenseCount > 0 ? `<span class="badge badge-primary">${escapeHtml(device.licenseCount)} 个</span><div style="margin-top: 4px; font-size: 11px;">${escapeHtml(device.licensesPreview)}</div>` : '-'}</td>
+                    <td>${device.hasTrialRecord ? `<span class="badge ${device.trialRemainingTasks > 0 ? 'badge-warning' : 'badge-danger'}">${escapeHtml(device.trialRemainingTasks)} 次</span>` : '-'}</td>
+                    <td>${device.restricted ? `<span class="badge badge-danger">已限制</span><div style="margin-top: 4px; font-size: 11px;">${escapeHtml(device.restrictionReason || device.restrictionNote || '-')}</div>` : '<span class="badge badge-success">正常</span>'}</td>
+                    <td>${escapeHtml(device.lastSeen || '-')}</td>
+                    <td>${escapeHtml(device.lastIP || '-')}</td>
+                    <td>${actions.join('<br>') || '-'}</td>
+                </tr>`;
+            });
+
+            html += '</tbody></table>';
+
+            if (totalPages > 1) {
+                html += '<div style="margin-top: 20px; text-align: center;">';
+                html += `<button class="btn btn-primary" onclick="changeDevicePage(${currentDevicePage - 1})" ${currentDevicePage === 1 ? 'disabled' : ''}>上一页</button>`;
+                html += `<span style="margin: 0 15px;">第 ${currentDevicePage} / ${totalPages} 页（共 ${devices.length} 条）</span>`;
+                html += `<button class="btn btn-primary" onclick="changeDevicePage(${currentDevicePage + 1})" ${currentDevicePage === totalPages ? 'disabled' : ''}>下一页</button>`;
+                html += '</div>';
+            }
+
+            tableEl.innerHTML = html;
+
+            tableEl.querySelectorAll('.restrict-device-btn').forEach((btn) => {
+                btn.addEventListener('click', async () => {
+                    const deviceId = decodeDataValue(btn.dataset.deviceId);
+                    const reason = window.prompt(`请输入设备 ${deviceId.substring(0, 16)}... 的限制原因（可选）`, '') ?? null;
+                    if (reason === null) return;
+                    await restrictDeviceIdEntry(deviceId, reason, btn);
+                });
+            });
+
+            tableEl.querySelectorAll('.unrestrict-device-btn').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    unrestrictDeviceIdEntry(decodeDataValue(btn.dataset.deviceId), btn);
+                });
+            });
+
+            tableEl.querySelectorAll('.delete-device-records-btn').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    deleteDeviceIdRecordsEntry(decodeDataValue(btn.dataset.deviceId), btn);
+                });
+            });
+        }
+
+        function changeDevicePage(page) {
+            const totalPages = Math.ceil(filteredDeviceInventory.length / devicePageSize);
+            if (page < 1 || page > totalPages) return;
+            currentDevicePage = page;
+            renderDeviceInventory();
+        }
+
+        async function restrictDeviceIdFromForm() {
+            const deviceIdInput = document.getElementById('manualRestrictDeviceId');
+            const reasonInput = document.getElementById('manualRestrictReason');
+            const deviceId = (deviceIdInput?.value || '').trim();
+            const reason = (reasonInput?.value || '').trim();
+
+            if (!deviceId) {
+                showToast('请输入要限制的设备ID', 'error');
+                return;
+            }
+
+            const result = await apiRequest('restrictDeviceId', { deviceId, reason, note: reason });
+
+            if (result.success) {
+                showToast('设备ID已限制');
+                if (deviceIdInput) deviceIdInput.value = '';
+                if (reasonInput) reasonInput.value = '';
+                loadDeviceInventory();
+            } else {
+                showToast('限制失败：' + (result.error || '未知错误'), 'error');
+            }
+        }
+
+        async function restrictDeviceIdEntry(deviceId, reason = '', buttonEl = null) {
+            setButtonBusy(buttonEl, true, '限制中...');
+            const result = await apiRequest('restrictDeviceId', { deviceId, reason, note: reason });
+            setButtonBusy(buttonEl, false);
+
+            if (result.success) {
+                showToast('设备ID已限制');
+                loadDeviceInventory();
+            } else {
+                showToast('限制失败：' + (result.error || '未知错误'), 'error');
+            }
+        }
+
+        async function unrestrictDeviceIdEntry(deviceId, buttonEl = null) {
+            if (!confirm(`确定要解除设备 ${deviceId.substring(0, 16)}... 的限制吗？`)) {
+                return;
+            }
+
+            setButtonBusy(buttonEl, true, '解除中...');
+            const result = await apiRequest('unrestrictDeviceId', { deviceId });
+            setButtonBusy(buttonEl, false);
+
+            if (result.success) {
+                showToast('设备ID限制已解除');
+                loadDeviceInventory();
+            } else {
+                showToast('解除失败：' + (result.error || '未知错误'), 'error');
+            }
+        }
+
+        async function deleteDeviceIdRecordsEntry(deviceId, buttonEl = null) {
+            if (!confirm(`确定要删除设备 ${deviceId.substring(0, 16)}... 的相关记录吗？\n\n这会删除试用记录，并解除该设备上的授权绑定。`)) {
+                return;
+            }
+
+            setButtonBusy(buttonEl, true, '删除中...');
+            const result = await apiRequest('deleteDeviceIdRecords', { deviceId });
+            setButtonBusy(buttonEl, false);
+
+            if (result.success) {
+                showToast(`设备记录已删除（解绑授权 ${result.data?.unboundLicenses || 0} 个）`);
+                loadDeviceInventory();
+                loadLicenses();
+                loadTrialDevices();
+                loadDashboard();
+            } else {
+                showToast('删除失败：' + (result.error || '未知错误'), 'error');
+            }
+        }
+
+        
 
         function filterLogs() {
             const filterAction = document.getElementById('filterLogAction')?.value || 'all';
@@ -2415,89 +1314,7 @@
             renderLogs();
         }
 
-        function renderLogs(logs = allLogs) {
-            const tableEl = document.getElementById('logsTable');
-            updatePageMeta('logsMeta', `共 ${allLogsRaw.length} 条日志，当前筛选后 ${logs.length} 条`);
-
-            if (logs.length === 0) {
-                tableEl.innerHTML = '<p style="text-align: center; color: #999; padding: 40px;">没有匹配的日志记录</p>';
-                return;
-            }
-
-            const start = (currentLogsPage - 1) * logsPageSize;
-            const end = start + logsPageSize;
-            const pagedLogs = logs.slice(start, end);
-            const totalPages = Math.ceil(logs.length / logsPageSize);
-
-            let html = '<table><thead><tr><th>时间</th><th>操作</th><th>通过原因</th><th>详情</th><th>IP地址</th></tr></thead><tbody>';
-
-            pagedLogs.forEach(log => {
-                let actionText = escapeHtml(log.action);
-                let details = escapeHtml(JSON.stringify(log));
-                const matchReasonText = escapeHtml(log.matchReasonLabel || log.matchReason || '-');
-
-                switch(log.action) {
-                    case 'activate':
-                        actionText = '<span class="badge badge-success">密钥激活</span>';
-                        details = `密钥: ${escapeHtml(log.license)}<br>设备: ${escapeHtml(log.deviceId)}`;
-                        break;
-                    case 'check_task':
-                        actionText = '<span class="badge badge-primary">任务校验</span>';
-                        details = `密钥: ${escapeHtml(log.license)}<br>设备: ${escapeHtml(log.deviceId)}`;
-                        break;
-                    case 'trial_activate':
-                        actionText = '<span class="badge badge-warning">试用激活</span>';
-                        details = `设备: ${escapeHtml(log.deviceId)}<br>密钥: ${escapeHtml(log.license || '-')}`;
-                        break;
-                    case 'trial_task':
-                        actionText = '<span class="badge badge-warning">试用任务</span>';
-                        details = `设备: ${escapeHtml(log.deviceId)}<br>剩余: ${escapeHtml(log.remainingTasks)} 次`;
-                        break;
-                    case 'batch_generate':
-                        actionText = '<span class="badge badge-success">批量生成</span>';
-                        details = `数量: ${escapeHtml(log.count)} 个<br>期限: ${escapeHtml(log.days)} 天`;
-                        break;
-                    case 'delete':
-                        actionText = '<span class="badge badge-danger">删除密钥</span>';
-                        details = `密钥: ${escapeHtml(log.license)}`;
-                        break;
-                    case 'reset_trial_tasks':
-                        actionText = '<span class="badge badge-primary">重置试用</span>';
-                        details = `设备: ${escapeHtml(log.deviceId)}<br>次数: ${escapeHtml(log.oldTasks)} → ${escapeHtml(log.newTasks)}`;
-                        break;
-                    case 'delete_trial_device':
-                        actionText = '<span class="badge badge-danger">删除设备</span>';
-                        details = `设备: ${escapeHtml(log.deviceId)}<br>剩余: ${escapeHtml(log.remainingTasks)} 次`;
-                        break;
-                    case 'set_expired':
-                        actionText = '<span class="badge badge-danger">设置过期</span>';
-                        details = `密钥: ${escapeHtml(log.license)}`;
-                        break;
-                    default:
-                        break;
-                }
-
-                html += `<tr>
-                    <td style="white-space: nowrap;">${escapeHtml(log.timestamp)}</td>
-                    <td>${actionText}</td>
-                    <td style="font-size: 11px; white-space: nowrap;">${matchReasonText}</td>
-                    <td style="font-size: 11px;">${details}</td>
-                    <td>${escapeHtml(log.ip || '-')}</td>
-                </tr>`;
-            });
-
-            html += '</tbody></table>';
-
-            if (totalPages > 1) {
-                html += '<div style="margin-top: 20px; text-align: center;">';
-                html += `<button class="btn btn-primary" onclick="changeLogsPage(${currentLogsPage - 1})" ${currentLogsPage === 1 ? 'disabled' : ''}>上一页</button>`;
-                html += `<span style="margin: 0 15px;">第 ${currentLogsPage} / ${totalPages} 页 (共 ${logs.length} 条)</span>`;
-                html += `<button class="btn btn-primary" onclick="changeLogsPage(${currentLogsPage + 1})" ${currentLogsPage === totalPages ? 'disabled' : ''}>下一页</button>`;
-                html += '</div>';
-            }
-
-            tableEl.innerHTML = html;
-        }
+        
 
         function changeLogsPage(page) {
             const totalPages = Math.ceil(allLogs.length / logsPageSize);
@@ -2506,19 +1323,7 @@
             renderLogs();
         }
 
-        async function updateLicenseConfig(license, popupMessage) {
-            const result = await apiRequest('updateLicenseConfig', {
-                license,
-                popupMessage
-            });
-
-            if (result.success) {
-                showToast(`密钥 ${license} 的弹窗配置已更新`);
-                loadLicenses();
-            } else {
-                showToast('更新失败：' + (result.error || '未知错误'), 'error');
-            }
-        }
+        
 
         function normalizeLicenseInput(value) {
             return String(value || '')
@@ -2560,204 +1365,96 @@
             filterLogs();
         }
 
-        async function exportLogs() {
-            const result = await apiRequest('getLogs', { page: 1, pageSize: 0 });
-            if (!result.success) {
-                showToast('加载日志失败，无法导出', 'error');
-                return;
-            }
+        
 
-            allLogsRaw = result.data.logs || [];
-            filterLogs();
+        
 
-            if (!allLogs.length) {
-                showToast('当前没有可导出的日志', 'error');
-                return;
-            }
+        
 
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
-            let content = '时间,动作,通过原因,密钥,设备ID,IP,详情\n';
-            allLogs.forEach((log) => {
-                const details = [
-                    log.matchReasonLabel ? `通过:${log.matchReasonLabel}` : '',
-                    log.remainingTasks ? `剩余:${log.remainingTasks}` : '',
-                    log.oldTasks !== undefined ? `旧值:${log.oldTasks}` : '',
-                    log.newTasks !== undefined ? `新值:${log.newTasks}` : '',
-                    log.count !== undefined ? `数量:${log.count}` : ''
-                ].filter(Boolean).join(' | ');
-                content += `${log.timestamp},${getLogActionLabel(log.action)},${log.matchReasonLabel || log.matchReason || ''},${log.license || ''},${log.deviceId || ''},${log.ip || ''},${details}\n`;
-            });
-            createDownloadFile(`admin-logs-${timestamp}.csv`, content, 'text/csv');
-            showToast(`已导出 ${allLogs.length} 条日志`);
-        }
+        
 
-        async function testTaskPermission() {
-            const deviceId = document.getElementById('testTaskDeviceId').value.trim();
-            const feature = document.getElementById('testTaskFeature')?.value.trim() || '';
-            const resultDiv = document.getElementById('testTaskResult');
+        
 
-            if (!deviceId) {
-                resultDiv.innerHTML = '<div class="alert alert-error">❌ 请输入设备ID</div>';
-                return;
-            }
-
-            resultDiv.innerHTML = '<div class="alert alert-info">⏳ 测试中...</div>';
-
-            const payload = { deviceId };
-            if (feature) {
-                payload.feature = feature;
-            }
-
-            const result = await apiRequest('checkTask', payload);
-
-            if (result.success) {
-                const data = result.data;
-                let html = '<div class="alert alert-success">';
-                html += '<h4>✅ 有权限执行任务</h4>';
-                html += '<table class="info-table">';
-                html += `<tr><td>状态</td><td><strong>${data.status === 'trial' ? '试用' : '正式授权'}</strong></td></tr>`;
-                html += `<tr><td>测试功能</td><td>${escapeHtml(feature || '通用校验')}</td></tr>`;
-
-                if (data.status === 'trial') {
-                    html += `<tr><td>剩余次数</td><td><strong>${escapeHtml(data.remainingTasks)}</strong> 次</td></tr>`;
-                    html += '<tr><td>提示</td><td style="color: #f59e0b;">⚠️ 本次测试已扣除 1 次试用次数</td></tr>';
-                } else {
-                    html += `<tr><td>是否永久</td><td>${data.isPermanent ? '<span style="color: #10b981;">✅ 永久授权</span>' : '⏱️ 时间授权'}</td></tr>`;
-                    html += `<tr><td>无限制</td><td>${data.unlimited ? '✅ 是' : '❌ 否'}</td></tr>`;
-                }
-
-                html += '</table></div>';
-                resultDiv.innerHTML = html;
-            } else {
-                resultDiv.innerHTML = `<div class="alert alert-error"><h4>❌ 无权限</h4><p>${escapeHtml(result.message || result.error || '未知错误')}</p></div>`;
-            }
-        }
-
-        async function showLicenseLimitsConfig(licenseFromList = '') {
-            const presetInput = document.getElementById('licenseLimitsTarget');
-            const presetLicense = licenseFromList || presetInput?.value.trim() || '';
-            const rawLicense = presetLicense || prompt('请输入要配置的密钥：');
-            const normalizedLicense = normalizeLicenseInput(rawLicense);
-            if (!normalizedLicense) return;
-
-            try {
-                await ensureExistingLicenseForAdmin(normalizedLicense);
-            } catch (error) {
-                showToast(error.message === 'LICENSE_NOT_FOUND' ? '该密钥不存在，无法配置限制' : '校验密钥失败', 'error');
-                return;
-            }
-
-            if (presetInput) {
-                presetInput.value = normalizedLicense;
-            }
-
-            const result = await apiRequest('getFeatureLimitsConfig');
+        async function loadTrialDevices() {
+            const [result] = await Promise.all([
+                apiRequest('listTrialDevices'),
+                refreshTrialDefaultsFromServer()
+            ]);
+            const tableEl = document.getElementById('trialTable');
 
             if (!result.success) {
-                showToast('加载配置失败：' + (result.error || '未知错误'), 'error');
+                tableEl.innerHTML = `<p>${escapeHtml(result.error || '加载失败')}</p>`;
+                updatePageMeta('trialMeta', '加载试用设备失败');
                 return;
             }
 
-            const globalConfig = result.data.global;
-            const licenseConfig = result.data.licenses[normalizedLicense] || {};
+            allTrialDevices = result.data.devices || [];
+            filterTrialDevices();
+        }
 
-            const modalHtml = `
-                <div id="licenseLimitsModal" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 10000;">
-                    <div style="background: white; border-radius: 12px; padding: 30px; max-width: 800px; width: 90%; max-height: 90vh; overflow-y: auto;">
-                        <h2 style="margin-bottom: 10px;">🔽 单个密钥限制配置</h2>
-                        <p style="color: #666; margin-bottom: 5px;">密钥：<code style="background: #f3f4f6; padding: 4px 8px; border-radius: 4px;">${escapeHtml(normalizedLicense)}</code></p>
-                        <p style="color: #666; margin-bottom: 20px; font-size: 13px;">💡 留空或设置为 0 将使用全局配置</p>
+        function renderTrialDevices(devices = filteredTrialDevices) {
+            const tableEl = document.getElementById('trialTable');
+            const defaultTrialTasks = getConfiguredDefaultTrialTasks();
+            updatePageMeta('trialMeta', `共 ${allTrialDevices.length} 台试用设备，当前筛选后 ${devices.length} 台`);
 
-                        <div style="display: grid; gap: 20px;">
-                            ${createLicenseFeatureLimitRow('export', '📤 帖子导出', globalConfig.export, licenseConfig.export)}
-                            ${createLicenseFeatureLimitRow('download', '📥 文件下载', globalConfig.download, licenseConfig.download)}
-                            ${createLicenseFeatureLimitRow('turboDownload', '🚀 极速下载', globalConfig.turboDownload, licenseConfig.turboDownload)}
-                            ${createLicenseFeatureLimitRow('search', '🔍 关键词搜索', globalConfig.search, licenseConfig.search)}
-                            ${createLicenseFeatureLimitRow('searchResult', '📋 导出搜索框', globalConfig.searchResult, licenseConfig.searchResult)}
-                            ${createLicenseFeatureLimitRow('column', '📚 专栏导出', globalConfig.column, licenseConfig.column)}
-                            ${createLicenseFeatureLimitRow('digest', '⭐ 精华导出', globalConfig.digest, licenseConfig.digest)}
-                            ${createLicenseFeatureLimitRow('backup', '📦 全量备份', globalConfig.backup, licenseConfig.backup)}
-                        </div>
+            if (devices.length === 0) {
+                tableEl.innerHTML = '<p style="text-align: center; color: #999; padding: 40px;">没有匹配的试用设备</p>';
+                return;
+            }
 
-                        <div style="margin-top: 30px; display: flex; gap: 10px; justify-content: flex-end;">
-                            <button class="btn btn-secondary" onclick="closeLicenseLimitsModal()">取消</button>
-                            <button id="saveLicenseLimitsBtn" class="btn btn-primary" data-license="${encodeDataValue(normalizedLicense)}">💾 保存配置</button>
-                        </div>
-                    </div>
-                </div>
-            `;
+            const start = (currentTrialPage - 1) * trialPageSize;
+            const end = start + trialPageSize;
+            const pagedDevices = devices.slice(start, end);
+            const totalPages = Math.ceil(devices.length / trialPageSize);
 
-            document.body.insertAdjacentHTML('beforeend', modalHtml);
-            document.getElementById('saveLicenseLimitsBtn')?.addEventListener('click', () => {
-                saveLicenseLimits(normalizedLicense);
+            let html = '<table><thead><tr><th>设备ID</th><th>剩余次数</th><th>首次使用</th><th>最后使用</th><th>IP地址</th><th>操作</th></tr></thead><tbody>';
+
+            pagedDevices.forEach(device => {
+                html += `<tr>
+                    <td style="font-family: monospace; font-size: 11px;">${escapeHtml(device.deviceId)}</td>
+                    <td><span class="badge ${device.remainingTasks > 5 ? 'badge-success' : device.remainingTasks > 0 ? 'badge-warning' : 'badge-danger'}">${escapeHtml(device.remainingTasks)} 次</span></td>
+                    <td>${escapeHtml(device.firstSeen)}</td>
+                    <td>${escapeHtml(device.lastSeen)}</td>
+                    <td>${escapeHtml(device.lastIP)}</td>
+                    <td>
+                        <button class="btn btn-primary btn-sm reset-trial-btn" data-device-id="${encodeDataValue(device.deviceId)}" style="margin-bottom: 5px;">重置为默认(${defaultTrialTasks}次)</button>
+                        <button class="btn btn-danger btn-sm delete-trial-btn" data-device-id="${encodeDataValue(device.deviceId)}">删除设备</button>
+                    </td>
+                </tr>`;
+            });
+
+            html += '</tbody></table>';
+
+            if (totalPages > 1) {
+                html += '<div style="margin-top: 20px; text-align: center;">';
+                html += `<button class="btn btn-primary" onclick="changeTrialPage(${currentTrialPage - 1})" ${currentTrialPage === 1 ? 'disabled' : ''}>上一页</button>`;
+                html += `<span style="margin: 0 15px;">第 ${currentTrialPage} / ${totalPages} 页（共 ${devices.length} 台）</span>`;
+                html += `<button class="btn btn-primary" onclick="changeTrialPage(${currentTrialPage + 1})" ${currentTrialPage === totalPages ? 'disabled' : ''}>下一页</button>`;
+                html += '</div>';
+            }
+
+            tableEl.innerHTML = html;
+
+            tableEl.querySelectorAll('.reset-trial-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    resetTrialTasks(decodeDataValue(btn.dataset.deviceId));
+                });
+            });
+
+            tableEl.querySelectorAll('.delete-trial-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    deleteTrialDevice(decodeDataValue(btn.dataset.deviceId));
+                });
             });
         }
 
-        async function saveLicenseLimits(license) {
-            let normalizedLicense = normalizeLicenseInput(license);
-            try {
-                ({ normalizedLicense } = await ensureExistingLicenseForAdmin(normalizedLicense));
-            } catch (error) {
-                showToast(error.message === 'LICENSE_NOT_FOUND' ? '该密钥不存在，无法保存限制' : '校验密钥失败', 'error');
+        async function resetTrialTasks(deviceId) {
+            const resetTasks = await refreshTrialDefaultsFromServer();
+            if (!confirm(`确定要将设备 ${deviceId.substring(0, 16)}... 的试用次数重置为 ${resetTasks} 次吗？`)) {
                 return;
             }
 
-            const features = ['export', 'download', 'turboDownload', 'search', 'searchResult', 'column', 'digest', 'backup'];
-
-            const currentResult = await apiRequest('getFeatureLimitsConfig');
-            if (!currentResult.success) {
-                showToast('加载配置失败：' + (currentResult.error || '未知错误'), 'error');
-                return;
-            }
-
-            const config = currentResult.data;
-            config.licenses[normalizedLicense] = {};
-
-            features.forEach(feature => {
-                const enabled = document.getElementById(`lic-limit-${feature}-enabled`).checked;
-                const limit = parseInt(document.getElementById(`lic-limit-${feature}-count`).value, 10) || 0;
-                const period = document.getElementById(`lic-limit-${feature}-period`).value;
-
-                if (limit !== 0 || period !== 'unlimited' || !enabled) {
-                    config.licenses[normalizedLicense][feature] = { enabled, limit, period };
-                }
-            });
-
-            if (Object.keys(config.licenses[normalizedLicense]).length === 0) {
-                delete config.licenses[normalizedLicense];
-            }
-
-            const result = await apiRequest('updateFeatureLimitsConfig', { config });
-
-            if (result.success) {
-                showToast(`密钥 ${normalizedLicense} 的限制配置已保存`);
-                closeLicenseLimitsModal();
-            } else {
-                showToast('保存失败：' + (result.error || '未知错误'), 'error');
-            }
-        }
-
-        async function deleteLicense(license) {
-            if (!confirm('确定要删除此密钥吗？')) return;
-
-            const result = await apiRequest('deleteLicense', { license });
-
-            if (result.success) {
-                showToast(`密钥 ${license} 已删除`);
-                loadLicenses();
-                await loadLicenses();
-                await loadDashboard();
-            } else {
-                showToast('删除失败：' + (result.error || '未知错误'), 'error');
-            }
-        }
-
-        async function resetTrialTasks(deviceId, tasks) {
-            if (!confirm(`确定要将设备 ${deviceId.substring(0, 16)}... 的试用次数重置为 ${tasks} 次吗？`)) {
-                return;
-            }
-
-            const result = await apiRequest('resetTrialTasks', { deviceId, tasks });
+            const result = await apiRequest('resetTrialTasks', { deviceId });
 
             if (result.success) {
                 showToast(`试用次数已重置为 ${result.data.newTasks} 次`);
@@ -2768,7 +1465,8 @@
         }
 
         async function deleteTrialDevice(deviceId) {
-            if (!confirm(`⚠️ 确定要删除设备吗？\n\n设备ID: ${deviceId.substring(0, 16)}...\n\n删除后该设备可以重新激活试用（10次）`)) {
+            const defaultTrialTasks = await refreshTrialDefaultsFromServer();
+            if (!confirm(`⚠️ 确定要删除设备吗？\n\n设备ID: ${deviceId.substring(0, 16)}...\n\n删除后该设备可以重新激活试用（${defaultTrialTasks}次）`)) {
                 return;
             }
 
@@ -2782,40 +1480,25 @@
             }
         }
 
-        async function saveGlobalConfig() {
-            const purchaseUrl = document.getElementById('globalPurchaseUrl').value.trim();
-            const globalPopupMessage = document.getElementById('globalPopupMessage').value.trim();
-            const defaultTrialTasks = parseInt(document.getElementById('defaultTrialTasks').value, 10) || 10;
-
-            if (!purchaseUrl) {
-                showToast('请输入购买链接', 'error');
+        async function clearTrialDevices(buttonEl) {
+            if (!confirm('确定要清空全部试用设备吗？\n\n这会删除当前所有试用设备记录，之前命中过的 IP 和设备环境限制也会一并清空。')) {
                 return;
             }
 
-            if (defaultTrialTasks < 1 || defaultTrialTasks > 1000) {
-                showToast('试用次数必须在 1-1000 之间', 'error');
-                return;
-            }
-
-            try {
-                new URL(purchaseUrl);
-            } catch (e) {
-                showToast('请输入有效的 URL（如 https://example.com）', 'error');
-                return;
-            }
-
-            const result = await apiRequest('updateGlobalConfig', {
-                purchaseUrl,
-                globalPopupMessage,
-                defaultTrialTasks
-            });
+            setButtonBusy(buttonEl, true, '清空中...');
+            const result = await apiRequest('clearTrialDevices');
+            setButtonBusy(buttonEl, false);
 
             if (result.success) {
-                showToast(`全局配置已保存，默认试用次数 ${defaultTrialTasks} 次`);
+                showToast(`已清空全部试用设备（${result.data?.clearedCount || 0} 台）`);
+                loadTrialDevices();
+                loadDashboard();
             } else {
-                showToast('保存失败：' + (result.error || '未知错误'), 'error');
+                showToast('清空失败：' + (result.error || '未知错误'), 'error');
             }
         }
+
+        
 
         async function saveGlobalLimits() {
             const features = ['export', 'download', 'turboDownload', 'search', 'searchResult', 'column', 'digest', 'backup'];
@@ -3028,20 +1711,7 @@
             }
         }
 
-        async function loadDashboard() {
-            const result = await apiRequest('getStats');
-
-            if (!result.success) {
-                showToast('加载仪表盘失败：' + (result.error || '未知错误'), 'error');
-                return;
-            }
-
-            const stats = result.data;
-            document.getElementById('totalLicenses').textContent = stats.totalLicenses;
-            document.getElementById('activeLicenses').textContent = stats.activeLicenses;
-            document.getElementById('boundDevices').textContent = stats.boundDevices;
-            document.getElementById('trialDevices').textContent = stats.trialDevices;
-        }
+        
 
         async function batchGenerateLicenses() {
             const button = document.getElementById('batchGenerateBtn');
@@ -3212,7 +1882,9 @@
                 });
 
                 if (result.success) {
-                    showToast(`全局配置已保存，默认试用次数 ${defaultTrialTasks} 次`);
+                    currentDefaultTrialTasks = parseInt(result.data?.defaultTrialTasks, 10) || defaultTrialTasks;
+                    const syncedTrialDevices = Number(result.data?.syncedTrialDevices || 0);
+                    showToast(`全局配置已保存，默认试用次数 ${currentDefaultTrialTasks} 次，已同步 ${syncedTrialDevices} 台试用设备`);
                 } else {
                     showToast('保存失败：' + (result.error || '未知错误'), 'error');
                 }
@@ -3403,21 +2075,7 @@
             );
         }
 
-        function updateLicenseBulkActions() {
-            const count = selectedLicenses.size;
-            const copyBtn = document.getElementById('copySelectedLicensesBtn');
-            const deleteBtn = document.getElementById('deleteSelectedLicensesBtn');
-
-            if (copyBtn) {
-                copyBtn.disabled = count === 0;
-                copyBtn.textContent = count > 0 ? `📋 复制选中 (${count})` : '📋 复制选中';
-            }
-
-            if (deleteBtn) {
-                deleteBtn.disabled = count === 0;
-                deleteBtn.textContent = count > 0 ? `🗑️ 删除选中 (${count})` : '🗑️ 删除选中';
-            }
-        }
+        
 
         function copySingleLicense(license) {
             navigator.clipboard.writeText(license)
@@ -3526,60 +2184,7 @@
             showToast(`已导出 ${allLogs.length} 条日志`);
         }
 
-        function renderDashboardHealth(overview) {
-            const system = overview.system;
-            const config = overview.config;
-            const features = overview.features;
-            const healthEl = document.getElementById('dashboardHealth');
-            if (!healthEl) return;
-
-            const purchaseDomain = config.purchaseUrl ? (() => {
-                try {
-                    return new URL(config.purchaseUrl).host;
-                } catch (error) {
-                    return config.purchaseUrl;
-                }
-            })() : '未配置';
-
-            healthEl.innerHTML = `
-                <div class="dashboard-inline-list">
-                    <span class="status-chip ${system.cosConfigured ? 'ok' : 'warn'}">${system.cosConfigured ? 'COS 已连接' : '内存模式'}</span>
-                    <span class="status-chip ${system.adminLoginConfigured ? 'ok' : 'warn'}">${system.adminLoginConfigured ? '后台登录已配置' : '后台登录未配置'}</span>
-                    <span class="status-chip ${features.disabledCount > 0 ? 'warn' : 'ok'}">${features.disabledCount > 0 ? `已禁用 ${features.disabledCount} 项功能` : '功能全开'}</span>
-                    <span class="status-chip ${features.limitedCount > 0 ? 'info' : 'ok'}">${features.limitedCount > 0 ? `有限制 ${features.limitedCount} 项` : '无限制功能'}</span>
-                </div>
-                <div class="dashboard-list">
-                    <div class="dashboard-list-item">
-                        <div>
-                            <strong>默认试用次数</strong>
-                            <small>新用户首次试用可用次数</small>
-                        </div>
-                        <span>${config.defaultTrialTasks} 次</span>
-                    </div>
-                    <div class="dashboard-list-item">
-                        <div>
-                            <strong>购买链接</strong>
-                            <small>${purchaseDomain}</small>
-                        </div>
-                        <span>${config.purchaseUrl ? '已配置' : '未配置'}</span>
-                    </div>
-                    <div class="dashboard-list-item">
-                        <div>
-                            <strong>全局弹窗</strong>
-                            <small>${config.globalPopupMessage ? '已有内容' : '当前为空'}</small>
-                        </div>
-                        <span>${config.globalPopupMessage ? '已开启' : '未设置'}</span>
-                    </div>
-                    <div class="dashboard-list-item">
-                        <div>
-                            <strong>单密钥限制覆盖</strong>
-                            <small>已配置单独功能限制的密钥数量</small>
-                        </div>
-                        <span>${features.licenseOverrideCount} 个</span>
-                    </div>
-                </div>
-            `;
-        }
+        
 
         function renderDashboardPeriods(overview) {
             const periodsEl = document.getElementById('dashboardPeriods');
@@ -3646,246 +2251,13 @@
                 : '<p class="empty-state">最近还没有管理操作记录</p>';
         }
 
-        async function loadDashboard() {
-            const refreshBtn = document.getElementById('dashboardRefreshBtn');
-            setButtonBusy(refreshBtn, true, '刷新中...');
+        
 
-            try {
-                const result = await apiRequest('getAdminOverview');
+        
 
-                if (!result.success) {
-                    updatePageMeta('dashboardMeta', '仪表盘概览加载失败');
-                    showToast('加载仪表盘失败：' + (result.error || '未知错误'), 'error');
-                    return;
-                }
+        
 
-                const overview = result.data;
-                const stats = overview.stats;
-                document.getElementById('totalLicenses').textContent = stats.totalLicenses;
-                document.getElementById('activeLicenses').textContent = stats.activeLicenses;
-                document.getElementById('boundDevices').textContent = stats.boundDevices;
-                document.getElementById('trialDevices').textContent = stats.trialDevices;
-
-                updatePageMeta(
-                    'dashboardMeta',
-                    `存储：${overview.system.storageMode.toUpperCase()} · 服务器时间：${overview.system.serverTime} · 已启用功能 ${overview.features.enabledCount} 项`
-                );
-                renderDashboardHealth(overview);
-                renderDashboardPeriods(overview);
-                renderDashboardRecentLogs(overview);
-            } finally {
-                setButtonBusy(refreshBtn, false);
-            }
-        }
-
-        async function loadLicenses() {
-            const result = await apiRequest('listAllLicenses');
-            const tableEl = document.getElementById('licensesTable');
-
-            if (!result.success) {
-                tableEl.innerHTML = '<p>加载失败：' + escapeHtml(result.error || '未知错误') + '</p>';
-                updatePageMeta('licensesMeta', '加载密钥数据失败');
-                updateLicenseBulkActions();
-                return;
-            }
-
-            featureLimitsConfigCache = limitsResult.success
-                ? (limitsResult.data || { global: {}, licenses: {} })
-                : { global: {}, licenses: {} };
-            allLicensesCache = sortLicensesByCreatedDesc(result.data.licenses || []);
-            syncSelectedLicenses();
-            filterLicenses();
-        }
-
-        function filterLicenses() {
-            const statusFilter = document.getElementById('filterStatus')?.value || 'all';
-            const bindingFilter = document.getElementById('filterBinding')?.value || 'all';
-            const configFilter = document.getElementById('filterConfigState')?.value || 'all';
-            const daysFilter = document.getElementById('filterDays')?.value || 'all';
-            const keyword = (document.getElementById('searchLicense')?.value || '').trim().toLowerCase();
-
-            let filtered = [...allLicensesCache];
-
-            if (statusFilter !== 'all') {
-                if (statusFilter === 'expired') {
-                    filtered = filtered.filter((license) => license.isExpired);
-                } else {
-                    filtered = filtered.filter((license) => license.status === statusFilter && !license.isExpired);
-                }
-            }
-
-            if (bindingFilter !== 'all') {
-                filtered = filtered.filter((license) => {
-                    const isBound = license.deviceId && license.deviceId !== '未绑定';
-                    return bindingFilter === 'bound' ? isBound : !isBound;
-                });
-            }
-
-            if (configFilter !== 'all') {
-                filtered = filtered.filter((license) => {
-                    const limitSummary = getLicenseLimitSummary(license.license);
-                    const hasConfig = Boolean((license.popupMessage || '').trim()) || limitSummary.hasOverride;
-                    return configFilter === 'configured' ? hasConfig : !hasConfig;
-                });
-            }
-
-            if (daysFilter !== 'all') {
-                filtered = filtered.filter((license) => license.days === parseInt(daysFilter, 10));
-            }
-
-            if (keyword) {
-                filtered = filtered.filter((license) => {
-                    const limitSummary = getLicenseLimitSummary(license.license);
-                    const haystack = [
-                        license.license,
-                        license.deviceId,
-                        license.created,
-                        license.activatedAt,
-                        license.expire,
-                        license.popupMessage,
-                        license.lastIP,
-                        limitSummary.searchText
-                    ].join(' ').toLowerCase();
-                    return haystack.includes(keyword);
-                });
-            }
-
-            filteredLicensesCache = sortLicensesByCreatedDesc(filtered);
-            currentLicensesPage = 1;
-            renderLicenses();
-        }
-
-        function renderLicenses(licenses = filteredLicensesCache) {
-            const tableEl = document.getElementById('licensesTable');
-            const start = (currentLicensesPage - 1) * licensesPageSize;
-            const end = start + licensesPageSize;
-            const pagedLicenses = licenses.slice(start, end);
-            const totalPages = Math.ceil(licenses.length / licensesPageSize);
-
-            updatePageMeta(
-                'licensesMeta',
-                `共 ${allLicensesCache.length} 个密钥，筛选后 ${licenses.length} 个，已勾选 ${selectedLicenses.size} 个`
-            );
-
-            if (licenses.length === 0) {
-                tableEl.innerHTML = '<p class="empty-state">没有匹配的密钥记录</p>';
-                updateLicenseBulkActions();
-                return;
-            }
-
-            const allPagedSelected = pagedLicenses.length > 0 && pagedLicenses.every((item) => selectedLicenses.has(item.license));
-            let html = '<table><thead><tr><th><input type="checkbox" id="toggleCurrentLicenses" class="table-checkbox"' + (allPagedSelected ? ' checked' : '') + '></th><th>密钥</th><th>期限</th><th>状态</th><th>设备ID</th><th>创建时间</th><th>激活时间</th><th>过期时间</th><th>剩余天数</th><th>配置</th><th>操作</th></tr></thead><tbody>';
-
-            pagedLicenses.forEach((lic) => {
-                const now = Date.now();
-                const isPermanent = lic.days === 0;
-                const daysLeft = isPermanent ? Infinity : (lic.expireTime ? Math.ceil((lic.expireTime - now) / (1000 * 60 * 60 * 24)) : lic.days);
-
-                let statusBadge = '<span class="badge badge-secondary">未知</span>';
-                if (lic.isExpired) statusBadge = '<span class="badge badge-danger">已过期</span>';
-                else if (lic.status === 'unused') statusBadge = '<span class="badge badge-success">未使用</span>';
-                else if (lic.status === 'activated') statusBadge = '<span class="badge badge-warning">已激活</span>';
-
-                let daysLeftBadge = '';
-                if (isPermanent) {
-                    daysLeftBadge = '<span class="badge badge-success">永久</span>';
-                } else if (lic.status === 'unused') {
-                    daysLeftBadge = `<span class="badge badge-success">激活后${escapeHtml(lic.days)}天</span>`;
-                } else if (!lic.isExpired) {
-                    if (daysLeft <= 7) daysLeftBadge = `<span class="badge badge-danger">${escapeHtml(daysLeft)}天</span>`;
-                    else if (daysLeft <= 30) daysLeftBadge = `<span class="badge badge-warning">${escapeHtml(daysLeft)}天</span>`;
-                    else daysLeftBadge = `<span class="badge badge-success">${escapeHtml(daysLeft)}天</span>`;
-                }
-
-                const periodText = isPermanent ? '永久' : `${escapeHtml(lic.days)}天`;
-                const activatedTime = lic.status === 'unused' ? '-' : escapeHtml(lic.activatedAt || '-');
-                const expireDisplay = lic.status === 'unused' ? '待激活' : escapeHtml(lic.expire);
-                const limitSummary = getLicenseLimitSummary(lic.license);
-                const hasConfig = Boolean((lic.popupMessage || '').trim()) || limitSummary.hasOverride;
-                const configBadge = hasConfig ? '<span class="badge badge-success">已配置</span>' : '<span class="badge badge-secondary">未配置</span>';
-
-                html += `<tr>
-                    <td><input type="checkbox" class="table-checkbox license-row-checkbox" data-license="${encodeDataValue(lic.license)}"${selectedLicenses.has(lic.license) ? ' checked' : ''}></td>
-                    <td style="font-family: monospace; font-size: 11px;">${escapeHtml(lic.license)}</td>
-                    <td>${periodText}</td>
-                    <td>${statusBadge}</td>
-                    <td style="font-family: monospace; font-size: 10px;">${escapeHtml(lic.deviceId)}</td>
-                    <td>${escapeHtml(lic.created)}</td>
-                    <td>${activatedTime}</td>
-                    <td>${expireDisplay}</td>
-                    <td>${daysLeftBadge}</td>
-                    <td>${configBadge}</td>
-                    <td>
-                        <button class="btn btn-sm btn-secondary copy-license-btn" data-license="${encodeDataValue(lic.license)}">复制</button>
-                        <button class="btn btn-sm btn-primary edit-license-config-btn" data-license="${encodeDataValue(lic.license)}" data-message="${encodeDataValue(lic.popupMessage || '')}">配置</button>
-                        <button class="btn btn-sm btn-secondary edit-license-limits-btn" data-license="${encodeDataValue(lic.license)}">限制</button>
-                        <button class="btn btn-sm btn-danger delete-license-btn" data-license="${encodeDataValue(lic.license)}">删除</button>
-                    </td>
-                </tr>`;
-            });
-
-            html += '</tbody></table>';
-
-            if (totalPages > 1) {
-                html += '<div style="margin-top: 20px; text-align: center;">';
-                html += `<button class="btn btn-primary" onclick="changeLicensesPage(${currentLicensesPage - 1})" ${currentLicensesPage === 1 ? 'disabled' : ''}>上一页</button>`;
-                html += `<span style="margin: 0 15px;">第 ${currentLicensesPage} / ${totalPages} 页 (共 ${licenses.length} 条)</span>`;
-                html += `<button class="btn btn-primary" onclick="changeLicensesPage(${currentLicensesPage + 1})" ${currentLicensesPage === totalPages ? 'disabled' : ''}>下一页</button>`;
-                html += '</div>';
-            }
-
-            tableEl.innerHTML = html;
-
-            document.getElementById('toggleCurrentLicenses')?.addEventListener('change', (event) => {
-                pagedLicenses.forEach((license) => {
-                    if (event.target.checked) selectedLicenses.add(license.license);
-                    else selectedLicenses.delete(license.license);
-                });
-                renderLicenses();
-            });
-
-            tableEl.querySelectorAll('.license-row-checkbox').forEach((checkbox) => {
-                checkbox.addEventListener('change', () => {
-                    const license = decodeDataValue(checkbox.dataset.license);
-                    if (checkbox.checked) selectedLicenses.add(license);
-                    else selectedLicenses.delete(license);
-                    updateLicenseBulkActions();
-                    const toggleCurrent = document.getElementById('toggleCurrentLicenses');
-                    if (toggleCurrent) {
-                        toggleCurrent.checked = getCurrentPagedLicenses().every((item) => selectedLicenses.has(item.license));
-                    }
-                });
-            });
-
-            tableEl.querySelectorAll('.copy-license-btn').forEach((btn) => {
-                btn.addEventListener('click', () => {
-                    copySingleLicense(decodeDataValue(btn.dataset.license));
-                });
-            });
-
-            tableEl.querySelectorAll('.edit-license-config-btn').forEach((btn) => {
-                btn.addEventListener('click', () => {
-                    editLicenseConfig(
-                        decodeDataValue(btn.dataset.license),
-                        decodeDataValue(btn.dataset.message)
-                    );
-                });
-            });
-
-            tableEl.querySelectorAll('.edit-license-limits-btn').forEach((btn) => {
-                btn.addEventListener('click', () => {
-                    showLicenseLimitsConfig(decodeDataValue(btn.dataset.license));
-                });
-            });
-
-            tableEl.querySelectorAll('.delete-license-btn').forEach((btn) => {
-                btn.addEventListener('click', () => {
-                    deleteLicense(decodeDataValue(btn.dataset.license));
-                });
-            });
-
-            updateLicenseBulkActions();
-        }
+        
 
         function closeLicenseConfigModal() {
             document.getElementById('licenseConfigModal')?.remove();
@@ -4205,121 +2577,9 @@
 
             updateLicenseBulkActions();
         }
-        function renderAllLicensesStats(data, period) {
-            const contentDiv = document.getElementById('statsContent');
-            if (Object.keys(data).length === 0) {
-                contentDiv.innerHTML = '<p style="text-align: center; color: #999; padding: 40px;">暂无使用统计数据</p>';
-                return;
-            }
+        
 
-            const features = collectStatsFeatures(data, period, false);
-            const rankedItems = Object.entries(data || {}).map(([licenseKey, stats]) => {
-                let periodData = {};
-                if (period === 'total') {
-                    periodData = stats?.total || {};
-                } else if (period === 'monthly') {
-                    Object.values(stats?.monthly || {}).forEach((monthData) => {
-                        Object.entries(monthData || {}).forEach(([feature, count]) => {
-                            periodData[feature] = (periodData[feature] || 0) + count;
-                        });
-                    });
-                } else {
-                    Object.values(stats?.daily || {}).forEach((dayData) => {
-                        Object.entries(dayData || {}).forEach(([feature, count]) => {
-                            periodData[feature] = (periodData[feature] || 0) + count;
-                        });
-                    });
-                }
-                const total = features.reduce((sum, feature) => sum + (Number(periodData[feature]) || 0), 0);
-                return { licenseKey, periodData, total };
-            }).sort((a, b) => b.total - a.total || String(a.licenseKey).localeCompare(String(b.licenseKey)));
-
-            let html = '<div class="actions" style="margin-bottom: 16px;"><button class="btn btn-secondary" onclick="exportCurrentStatsView()">导出当前视图</button></div>';
-            html += '<table><thead><tr><th>密钥</th>';
-            features.forEach((feature) => {
-                html += `<th>${getStatsFeatureLabel(feature)}</th>`;
-            });
-            html += '<th>总计</th></tr></thead><tbody>';
-
-            rankedItems.forEach(({ licenseKey, periodData, total }) => {
-                html += `<tr><td style="min-width: 280px;"><button type="button" class="stats-license-link" data-license="${encodeDataValue(licenseKey)}" title="点击配置该密钥限制" style="font-family: monospace; font-size: 11px; white-space: normal; word-break: break-all; line-height: 1.5; border: none; background: transparent; color: #2563eb; padding: 0; text-align: left; cursor: pointer;">${escapeHtml(licenseKey)}</button></td>`;
-                features.forEach((feature) => {
-                    html += `<td>${periodData[feature] || 0}</td>`;
-                });
-                html += `<td><strong>${total}</strong></td></tr>`;
-            });
-
-            html += '</tbody></table>';
-            contentDiv.innerHTML = html;
-            contentDiv.querySelectorAll('.stats-license-link').forEach((button) => {
-                button.addEventListener('click', () => {
-                    showLicenseLimitsConfig(decodeDataValue(button.dataset.license || ''));
-                });
-            });
-        }
-
-        function renderAllLicensesStats(data, period) {
-            const contentDiv = document.getElementById('statsContent');
-            const features = collectStatsFeatures(data, period, false);
-            const rankedItems = Object.entries(data || {}).map(([licenseKey, stats]) => {
-                let periodData = {};
-                if (period === 'total') {
-                    periodData = stats?.total || {};
-                } else if (period === 'monthly') {
-                    Object.values(stats?.monthly || {}).forEach((monthData) => {
-                        Object.entries(monthData || {}).forEach(([feature, count]) => {
-                            periodData[feature] = (periodData[feature] || 0) + count;
-                        });
-                    });
-                } else {
-                    Object.values(stats?.daily || {}).forEach((dayData) => {
-                        Object.entries(dayData || {}).forEach(([feature, count]) => {
-                            periodData[feature] = (periodData[feature] || 0) + count;
-                        });
-                    });
-                }
-                const total = features.reduce((sum, feature) => sum + (Number(periodData[feature]) || 0), 0);
-                return { licenseKey, periodData, total };
-            }).sort((a, b) => b.total - a.total || String(a.licenseKey).localeCompare(String(b.licenseKey)));
-
-            if (!rankedItems.length) {
-                contentDiv.innerHTML = '<p class="empty-state">暂无使用统计数据</p>';
-                return;
-            }
-
-            const totalUsage = rankedItems.reduce((sum, item) => sum + item.total, 0);
-            const activeLicenses = rankedItems.filter((item) => item.total > 0).length;
-            const topLicense = rankedItems[0]?.licenseKey || '-';
-
-            let html = buildStatsSummaryCards([
-                { label: '密钥数', value: rankedItems.length, meta: '当前视图' },
-                { label: '有使用记录', value: activeLicenses, meta: '至少 1 次' },
-                { label: '总使用次数', value: totalUsage, meta: period === 'total' ? '累计' : '当前周期汇总' },
-                { label: '最高密钥', value: topLicense, meta: `${rankedItems[0]?.total || 0} 次` }
-            ]);
-            html += '<div class="actions stats-toolbar"><button class="btn btn-secondary" onclick="exportCurrentStatsView()">导出当前视图</button></div>';
-            html += '<div class="table-shell"><table><thead><tr><th>密钥</th>';
-            features.forEach((feature) => {
-                html += `<th>${getStatsFeatureLabel(feature)}</th>`;
-            });
-            html += '<th>总计</th></tr></thead><tbody>';
-
-            rankedItems.forEach(({ licenseKey, periodData, total }) => {
-                html += `<tr><td style="min-width: 280px;"><button type="button" class="stats-license-link" data-license="${encodeDataValue(licenseKey)}" title="限制该密钥" style="font-family: monospace; font-size: 11px; white-space: normal; word-break: break-all; line-height: 1.5; border: none; background: transparent; color: #2563eb; padding: 0; text-align: left; cursor: pointer;">${escapeHtml(licenseKey)}</button></td>`;
-                features.forEach((feature) => {
-                    html += `<td>${periodData[feature] || 0}</td>`;
-                });
-                html += `<td><strong>${total}</strong></td></tr>`;
-            });
-
-            html += '</tbody></table></div>';
-            contentDiv.innerHTML = html;
-            contentDiv.querySelectorAll('.stats-license-link').forEach((button) => {
-                button.addEventListener('click', () => {
-                    showLicenseLimitsConfig(decodeDataValue(button.dataset.license || ''));
-                });
-            });
-        }
+        
 
         const ADMIN_BULK_LIMIT_FEATURES = ['export', 'download', 'turboDownload', 'search', 'searchResult', 'column', 'digest', 'backup'];
         const ADMIN_TEST_CONTEXT_KEY = 'adminTestContext';
@@ -5042,151 +3302,9 @@
             }
         }
 
-        function renderAllLicensesStats(data, period) {
-            const contentDiv = document.getElementById('statsContent');
-            const features = collectStatsFeatures(data, period, false);
-            const rankedItems = Object.entries(data || {}).map(([licenseKey, stats]) => {
-                let periodData = {};
-                if (period === 'total') {
-                    periodData = stats?.total || {};
-                } else if (period === 'monthly') {
-                    Object.values(stats?.monthly || {}).forEach((monthData) => {
-                        Object.entries(monthData || {}).forEach(([feature, count]) => {
-                            periodData[feature] = (periodData[feature] || 0) + count;
-                        });
-                    });
-                } else {
-                    Object.values(stats?.daily || {}).forEach((dayData) => {
-                        Object.entries(dayData || {}).forEach(([feature, count]) => {
-                            periodData[feature] = (periodData[feature] || 0) + count;
-                        });
-                    });
-                }
-                const total = features.reduce((sum, feature) => sum + (Number(periodData[feature]) || 0), 0);
-                return { licenseKey, periodData, total };
-            }).sort((a, b) => b.total - a.total || String(a.licenseKey).localeCompare(String(b.licenseKey)));
+        
 
-            if (!rankedItems.length) {
-                contentDiv.innerHTML = '<p class="empty-state">暂无使用统计数据</p>';
-                return;
-            }
-
-            const totalUsage = rankedItems.reduce((sum, item) => sum + item.total, 0);
-            const activeLicenses = rankedItems.filter((item) => item.total > 0).length;
-            const topLicense = rankedItems[0]?.licenseKey || '-';
-
-            let html = buildStatsSummaryCards([
-                { label: '密钥数', value: rankedItems.length, meta: '当前视图' },
-                { label: '有使用记录', value: activeLicenses, meta: '至少 1 次' },
-                { label: '总使用次数', value: totalUsage, meta: period === 'total' ? '累计' : '当前周期汇总' },
-                { label: '最高密钥', value: topLicense, meta: `${rankedItems[0]?.total || 0} 次` }
-            ]);
-            html += '<div class="actions stats-toolbar"><button class="btn btn-secondary" onclick="exportCurrentStatsView()">导出当前视图</button></div>';
-            html += '<div class="table-shell"><table><thead><tr><th>密钥</th>';
-            features.forEach((feature) => {
-                html += `<th>${getStatsFeatureLabel(feature)}</th>`;
-            });
-            html += '<th>总计</th></tr></thead><tbody>';
-
-            rankedItems.forEach(({ licenseKey, periodData, total }) => {
-                html += `<tr><td style="min-width: 280px;"><button type="button" class="stats-license-link" data-license="${encodeDataValue(licenseKey)}" title="限制该密钥" style="font-family: monospace; font-size: 11px; white-space: normal; word-break: break-all; line-height: 1.5; border: none; background: transparent; color: #2563eb; padding: 0; text-align: left; cursor: pointer;">${escapeHtml(licenseKey)}</button></td>`;
-                features.forEach((feature) => {
-                    html += `<td>${periodData[feature] || 0}</td>`;
-                });
-                html += `<td><strong>${total}</strong></td></tr>`;
-            });
-
-            html += '</tbody></table></div>';
-            contentDiv.innerHTML = html;
-            contentDiv.querySelectorAll('.stats-license-link').forEach((button) => {
-                button.addEventListener('click', () => {
-                    showLicenseLimitsConfig(decodeDataValue(button.dataset.license || ''));
-                });
-            });
-        }
-
-        function renderSingleLicenseStats(data, license, period) {
-            const contentDiv = document.getElementById('statsContent');
-            const features = collectStatsFeatures(data, period, true);
-            const aggregate = {};
-
-            if (period === 'total') {
-                Object.entries(data || {}).forEach(([feature, count]) => {
-                    aggregate[feature] = Number(count) || 0;
-                });
-            } else {
-                Object.values(data || {}).forEach((counts) => {
-                    Object.entries(counts || {}).forEach(([feature, count]) => {
-                        aggregate[feature] = (aggregate[feature] || 0) + (Number(count) || 0);
-                    });
-                });
-            }
-
-            const totalUsage = Object.values(aggregate).reduce((sum, count) => sum + (Number(count) || 0), 0);
-            const rankedFeature = Object.entries(aggregate)
-                .map(([feature, count]) => ({ feature, count: Number(count) || 0 }))
-                .sort((a, b) => b.count - a.count || String(a.feature).localeCompare(String(b.feature)))[0];
-            const rowCount = period === 'total' ? 1 : Object.keys(data || {}).length;
-
-            let html = buildStatsSummaryCards([
-                { label: '当前密钥', value: license, meta: '统计对象' },
-                { label: '总使用次数', value: totalUsage, meta: period === 'total' ? '累计' : '当前周期汇总' },
-                { label: '时间切片', value: rowCount, meta: period === 'daily' ? '按天' : period === 'monthly' ? '按月' : '总计' },
-                { label: '最高功能', value: rankedFeature ? getFeatureLabel(rankedFeature.feature) : '无', meta: rankedFeature ? `${rankedFeature.count} 次` : '' }
-            ]);
-            html += `
-                <div class="actions stats-toolbar">
-                    <button class="btn btn-secondary" onclick="openStatsSelectedLicenseLimits()">限制功能</button>
-                    <button class="btn btn-secondary" onclick="openStatsSelectedLicensePopupConfig()">编辑弹窗</button>
-                    <button class="btn btn-secondary" onclick="openTestToolsForLicense('${escapeHtml(license)}')">带入测试</button>
-                    <select id="statsResetFeature" class="form-control" style="width: 220px;">
-                        <option value="">全部功能</option>
-                        ${features.map((feature) => `<option value="${escapeHtml(feature)}">${escapeHtml(getFeatureLabel(feature))}</option>`).join('')}
-                    </select>
-                    <button class="btn btn-danger" onclick="resetCurrentStatsView()">重置统计</button>
-                    <button class="btn btn-secondary" onclick="exportCurrentStatsView()">导出当前视图</button>
-                </div>
-            `;
-            html += '<div class="table-shell"><table><thead><tr><th>时间</th>';
-            features.forEach((feature) => {
-                html += `<th>${getStatsFeatureLabel(feature)}</th>`;
-            });
-            html += '<th>总计</th></tr></thead><tbody>';
-
-            if (period === 'total') {
-                html += '<tr><td><strong>总计</strong></td>';
-                let total = 0;
-                features.forEach((feature) => {
-                    const count = data[feature] || 0;
-                    total += count;
-                    html += `<td>${count}</td>`;
-                });
-                html += `<td><strong>${total}</strong></td></tr>`;
-            } else {
-                const timeData = Object.entries(data || {}).sort((a, b) => b[0].localeCompare(a[0]));
-                if (!timeData.length) {
-                    html += `<tr><td colspan="${features.length + 2}" class="empty-state">暂无统计数据</td></tr>`;
-                } else {
-                    timeData.forEach(([time, counts]) => {
-                        html += `<tr><td>${escapeHtml(time)}</td>`;
-                        let total = 0;
-                        features.forEach((feature) => {
-                            const count = counts[feature] || 0;
-                            total += count;
-                            html += `<td>${count}</td>`;
-                        });
-                        html += `<td><strong>${total}</strong></td></tr>`;
-                    });
-                }
-            }
-
-            html += '</tbody></table></div>';
-            contentDiv.innerHTML = html;
-            const statsResetFeature = document.getElementById('statsResetFeature');
-            if (statsResetFeature) {
-                statsResetFeature.value = '';
-            }
-        }
+        
 
         ensureTestContextBar();
         updateTestContextBar();
@@ -5314,6 +3432,10 @@
                     case 'delete_trial_device':
                         actionText = '<span class="badge badge-danger">删除设备</span>';
                         details = `设备: ${renderDeviceLink(log.deviceId)}<br>剩余: ${escapeHtml(log.remainingTasks)} 次`;
+                        break;
+                    case 'clear_trial_devices':
+                        actionText = '<span class="badge badge-danger">清空试用</span>';
+                        details = `已清空: ${escapeHtml(log.clearedCount || 0)} 台设备`;
                         break;
                     case 'set_expired':
                         actionText = '<span class="badge badge-danger">设置过期</span>';
