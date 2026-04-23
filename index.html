@@ -1,12 +1,14 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>知识星球助手 - 管理后台</title>
-        <link rel="stylesheet" href="./admin.css">
+    <link rel="stylesheet" href="./admin.css">
 
 </head>
+
 <body>
     <!-- 登录页面 -->
     <div id="loginPage">
@@ -14,15 +16,8 @@
             <h1>🔐 管理后台登录</h1>
             <p>请输入管理密码以继续</p>
             <form class="login-form" onsubmit="handleLogin(event); return false;">
-                <input 
-                    type="password" 
-                    id="loginPassword" 
-                    class="login-input" 
-                    placeholder="请输入管理密码"
-                    aria-label="管理密码"
-                    autocomplete="off"
-                    required
-                />
+                <input type="password" id="loginPassword" class="login-input" placeholder="请输入管理密码" aria-label="管理密码"
+                    autocomplete="off" required />
                 <div class="login-error" id="loginError">密码错误，请重试</div>
                 <button type="submit" id="loginSubmitBtn" class="login-btn">登录</button>
             </form>
@@ -31,489 +26,516 @@
 
     <!-- 主内容 -->
     <div id="mainContent">
-    <div class="container">
-        <div class="header">
-            <h1>🎛️ 知识星球助手 - 管理后台</h1>
-            <p>简洁高效的密钥管理系统</p>
-            <button onclick="logout()" style="position: absolute; top: 20px; right: 20px; padding: 8px 16px; background: rgba(255,255,255,0.2); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; backdrop-filter: blur(10px); transition: all 0.3s;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">🚪 退出登录</button>
-        </div>
-
-        <div class="tabs">
-            <button class="tab active" onclick="showTab('dashboard')">📊 仪表盘</button>
-            <button class="tab" onclick="showTab('generate')">➕ 生成密钥</button>
-            <button class="tab" onclick="showTab('licenses')">🔑 密钥列表</button>
-            <button class="tab" onclick="showTab('config')">⚙️ 系统配置</button>
-            <button class="tab" onclick="showTab('trial')">🎁 试用设备</button>
-            <button class="tab" onclick="showTab('logs')">📋 操作日志</button>
-            <button class="tab" onclick="showTab('features')">⚙️ 功能管理</button>
-            <button class="tab" onclick="showTab('stats')">📈 使用统计</button>
-            <button class="tab" onclick="showTab('test')">🧪 测试工具</button>
-        </div>
-
-        <div class="content">
-            <!-- 仪表盘 -->
-            <div id="page-dashboard" class="page active">
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <div class="stat-value" id="totalLicenses">0</div>
-                        <div class="stat-label">总密钥数</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value" id="activeLicenses">0</div>
-                        <div class="stat-label">有效密钥</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value" id="boundDevices">0</div>
-                        <div class="stat-label">已绑定设备</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value" id="trialDevices">0</div>
-                        <div class="stat-label">试用设备</div>
-                    </div>
-                </div>
-                <div class="page-toolbar">
-                    <div id="dashboardMeta" class="page-meta">正在加载后台概览...</div>
-                    <div class="actions" style="margin-bottom: 0;">
-                        <button id="dashboardRefreshBtn" class="btn btn-primary" onclick="loadDashboard()">🔄 刷新数据</button>
-                        <button class="btn btn-secondary" onclick="showTab('licenses')">🔑 去看密钥</button>
-                        <button class="btn btn-secondary" onclick="showTab('logs')">📋 最近日志</button>
-                    </div>
-                </div>
-                <div class="dashboard-grid">
-                    <div class="dashboard-panel">
-                        <h3>系统状态</h3>
-                        <div id="dashboardHealth" class="dashboard-stack">
-                            <p class="empty-state">等待加载系统状态...</p>
-                        </div>
-                    </div>
-                    <div class="dashboard-panel">
-                        <h3>授权分布</h3>
-                        <div id="dashboardPeriods" class="dashboard-stack">
-                            <p class="empty-state">等待加载授权分布...</p>
-                        </div>
-                    </div>
-                    <div class="dashboard-panel dashboard-panel-wide">
-                        <h3>最近操作</h3>
-                        <div id="dashboardRecentLogs" class="dashboard-stack">
-                            <p class="empty-state">等待加载最近操作...</p>
-                        </div>
-                    </div>
-                </div>
+        <div class="container">
+            <div class="header">
+                <h1>🎛️ 知识星球助手 - 管理后台</h1>
+                <p>简洁高效的密钥管理系统</p>
+                <button onclick="logout()"
+                    style="position: absolute; top: 20px; right: 20px; padding: 8px 16px; background: rgba(255,255,255,0.2); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; backdrop-filter: blur(10px); transition: all 0.3s;"
+                    onmouseover="this.style.background='rgba(255,255,255,0.3)'"
+                    onmouseout="this.style.background='rgba(255,255,255,0.2)'">🚪 退出登录</button>
             </div>
 
-            <!-- 生成密钥 -->
-            <div id="page-generate" class="page">
-                <h2 style="margin-bottom: 20px;">🎫 批量生成密钥</h2>
-                <div class="form-group">
-                    <label for="licenseCount">生成数量</label>
-                    <input type="number" id="licenseCount" class="form-control" value="10" min="1" max="1000" placeholder="输入生成数量（最多1000个）" aria-label="生成数量">
-                </div>
-                <div class="form-group">
-                    <label for="expireDays">有效期（天）</label>
-                    <select id="expireDays" class="form-control" aria-label="密钥期限">
-                        <option value="0">永久</option>
-                        <option value="30">30天（1个月）</option>
-                        <option value="90">90天（3个月）</option>
-                        <option value="180">180天（半年）</option>
-                        <option value="365" selected>365天（1年）</option>
-                        <option value="730">730天（2年）</option>
-                        <option value="1825">1825天（5年）</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="popupMessage">弹窗信息（可选）</label>
-                    <textarea id="popupMessage" class="form-control" rows="3" placeholder="激活后显示的弹窗信息，留空则不显示" aria-label="激活后弹窗信息"></textarea>
-                </div>
-                <button id="batchGenerateBtn" class="btn btn-primary" onclick="batchGenerateLicenses()">🎲 批量生成</button>
-                
-                <div id="generatedResult" class="alert alert-success" style="display:none;">
-                    <strong>✅ 成功生成 <span id="generatedCount"></span> 个密钥！</strong>
-                    <p><strong>有效期：</strong><span id="generatedDays"></span></p>
-                    <p><strong>说明：</strong><span id="generatedExpire"></span></p>
-                    <div style="margin-top: 15px;">
-                        <button class="btn btn-primary" onclick="exportLicenses('txt')">📄 导出为 TXT</button>
-                        <button class="btn btn-primary" onclick="exportLicenses('csv')">📊 导出为 CSV</button>
-                        <button class="btn btn-primary" onclick="copyAllLicenses()">📋 复制全部</button>
+            <div class="tabs">
+                <button class="tab active" onclick="showTab('dashboard')">📊 仪表盘</button>
+                <button class="tab" onclick="showTab('generate')">➕ 生成密钥</button>
+                <button class="tab" onclick="showTab('licenses')">🔑 密钥列表</button>
+                <button class="tab" onclick="showTab('config')">⚙️ 系统配置</button>
+                <button class="tab" onclick="showTab('trial')">🎁 试用设备</button>
+                <button class="tab" onclick="showTab('logs')">📋 操作日志</button>
+                <button class="tab" onclick="showTab('features')">⚙️ 功能管理</button>
+                <button class="tab" onclick="showTab('stats')">📈 使用统计</button>
+                <button class="tab" onclick="showTab('test')">🧪 测试工具</button>
+            </div>
+
+            <div class="content">
+                <!-- 仪表盘 -->
+                <div id="page-dashboard" class="page active">
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-value" id="totalLicenses">0</div>
+                            <div class="stat-label">总密钥数</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="activeLicenses">0</div>
+                            <div class="stat-label">有效密钥</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="boundDevices">0</div>
+                            <div class="stat-label">已绑定设备</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="trialDevices">0</div>
+                            <div class="stat-label">试用设备</div>
+                        </div>
                     </div>
-                    <div style="margin-top: 15px; max-height: 300px; overflow-y: auto; background: #f8f9fa; padding: 15px; border-radius: 8px; font-family: monospace; font-size: 12px;" id="licensesList"></div>
+                    <div class="page-toolbar">
+                        <div id="dashboardMeta" class="page-meta">正在加载后台概览...</div>
+                        <div class="actions" style="margin-bottom: 0;">
+                            <button id="dashboardRefreshBtn" class="btn btn-primary" onclick="loadDashboard()">🔄
+                                刷新数据</button>
+                            <button class="btn btn-secondary" onclick="showTab('licenses')">🔑 去看密钥</button>
+                            <button class="btn btn-secondary" onclick="showTab('logs')">📋 最近日志</button>
+                        </div>
+                    </div>
+                    <div class="dashboard-grid">
+                        <div class="dashboard-panel">
+                            <h3>系统状态</h3>
+                            <div id="dashboardHealth" class="dashboard-stack">
+                                <p class="empty-state">等待加载系统状态...</p>
+                            </div>
+                        </div>
+                        <div class="dashboard-panel">
+                            <h3>授权分布</h3>
+                            <div id="dashboardPeriods" class="dashboard-stack">
+                                <p class="empty-state">等待加载授权分布...</p>
+                            </div>
+                        </div>
+                        <div class="dashboard-panel dashboard-panel-wide">
+                            <h3>最近操作</h3>
+                            <div id="dashboardRecentLogs" class="dashboard-stack">
+                                <p class="empty-state">等待加载最近操作...</p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-            </div>
 
-            <!-- 密钥列表 -->
-            <div id="page-licenses" class="page">
-                <div class="actions page-toolbar">
-                    <input type="text" id="searchLicense" class="form-control search-box" placeholder="搜索密钥 / 设备ID / 弹窗信息..." aria-label="搜索密钥" oninput="filterLicenses()">
-                    <select id="filterStatus" class="form-control" style="width: 150px;" aria-label="按状态筛选密钥" onchange="filterLicenses()">
-                        <option value="all">全部状态</option>
-                        <option value="unused">未使用</option>
-                        <option value="activated">已激活</option>
-                        <option value="expired">已过期</option>
-                    </select>
-                    <select id="filterBinding" class="form-control" style="width: 150px;" aria-label="按绑定状态筛选密钥" onchange="filterLicenses()">
-                        <option value="all">全部设备</option>
-                        <option value="bound">已绑定设备</option>
-                        <option value="unbound">未绑定设备</option>
-                    </select>
-                    <select id="filterConfigState" class="form-control" style="width: 150px;" aria-label="按配置状态筛选密钥" onchange="filterLicenses()">
-                        <option value="all">全部配置</option>
-                        <option value="configured">已配弹窗</option>
-                        <option value="plain">未配弹窗</option>
-                    </select>
-                    <select id="filterDays" class="form-control" style="width: 150px;" aria-label="按期限筛选密钥" onchange="filterLicenses()">
-                        <option value="all">全部期限</option>
-                        <option value="0">永久</option>
-                        <option value="30">30天</option>
-                        <option value="90">90天</option>
-                        <option value="180">180天</option>
-                        <option value="365">365天</option>
-                        <option value="730">730天</option>
-                        <option value="1825">1825天</option>
-                    </select>
-                    <button class="btn btn-primary" onclick="loadLicenses()">🔄 刷新</button>
-                    <button id="copySelectedLicensesBtn" class="btn btn-secondary" onclick="copySelectedLicenses()" disabled>📋 复制选中</button>
-                    <button id="deleteSelectedLicensesBtn" class="btn btn-danger" onclick="deleteSelectedLicenses()" disabled>🗑️ 删除选中</button>
-                    <button class="btn btn-primary" onclick="exportAllLicenses('csv')">📊 导出CSV</button>
-                    <button class="btn btn-primary" onclick="exportAllLicenses('txt')">📄 导出TXT</button>
-                </div>
-                <div id="licensesMeta" class="page-meta">尚未加载密钥数据</div>
-                <div id="licensesTable"></div>
-            </div>
-
-            <!-- 系统配置 -->
-            <div id="page-config" class="page">
-                <h2 style="margin-bottom: 20px;">⚙️ 系统配置</h2>
-                
-                <div class="form-section">
-                    <h3>购买链接</h3>
+                <!-- 生成密钥 -->
+                <div id="page-generate" class="page">
+                    <h2 style="margin-bottom: 20px;">🎫 批量生成密钥</h2>
                     <div class="form-group">
-                        <label for="globalPurchaseUrl">购买链接</label>
-                        <input type="url" id="globalPurchaseUrl" class="form-control" placeholder="https://example.com/buy" aria-label="购买链接">
-                        <small style="color: #666; font-size: 12px;">此链接将在所有"购买"、"升级"按钮中使用</small>
-                    </div>
-                </div>
-                
-                <div class="form-section">
-                    <h3>全局弹窗配置</h3>
-                    <div class="form-group">
-                        <label for="globalPopupMessage">全局弹窗信息</label>
-                        <textarea id="globalPopupMessage" class="form-control" rows="4" placeholder="输入要向所有用户显示的弹窗信息（留空则不显示）" aria-label="全局弹窗信息"></textarea>
-                        <small style="color: #666; font-size: 12px;">此弹窗将在所有用户打开插件时自动显示（每次修改后会重新显示一次）</small>
-                    </div>
-                </div>
-                
-                <div class="form-section">
-                    <h3>试用次数配置</h3>
-                    <div class="form-group">
-                        <label for="defaultTrialTasks">默认试用次数</label>
-                        <input type="number" id="defaultTrialTasks" class="form-control" value="10" min="1" max="1000" placeholder="10" aria-label="默认试用次数">
-                        <small style="color: #666; font-size: 12px;">新用户激活试用时的默认次数（建议 5-20 次）</small>
-                    </div>
-                </div>
-                
-                <button id="saveGlobalConfigBtn" class="btn btn-primary" onclick="saveGlobalConfig()">💾 保存配置</button>
-                <button class="btn btn-secondary" onclick="loadGlobalConfig()">🔄 重新加载</button>
-            </div>
-
-            <!-- 试用设备 -->
-            <div id="page-trial" class="page">
-                <div class="actions page-toolbar">
-                    <input type="text" id="searchTrialDevice" class="form-control search-box" placeholder="搜索设备ID / IP / 时间..." aria-label="搜索试用设备" oninput="filterTrialDevices()">
-                    <button class="btn btn-primary" onclick="loadTrialDevices()">🔄 刷新</button>
-                    <button class="btn btn-secondary" onclick="exportTrialDevices()">📊 导出CSV</button>
-                    <button class="btn btn-danger" onclick="clearTrialDevices(this)">🗑️ 清空全部试用设备</button>
-                </div>
-                <div id="trialMeta" class="page-meta">尚未加载试用设备数据</div>
-                <div id="trialTable"></div>
-            </div>
-
-            <!-- 操作日志 -->
-            <div id="page-logs" class="page">
-                <div class="actions page-toolbar">
-                    <input type="text" id="searchLogKeyword" class="form-control search-box" placeholder="搜索密钥 / 设备 / IP / 动作..." aria-label="搜索操作日志" oninput="filterLogs()">
-                    <select id="filterLogAction" class="form-control" style="width: 150px;" aria-label="按动作筛选日志" onchange="filterLogs()">
-                        <option value="all">全部操作</option>
-                        <option value="activate">密钥激活</option>
-                        <option value="trial_activate">试用激活</option>
-                        <option value="trial_task">试用任务</option>
-                        <option value="reset_trial_tasks">重置试用</option>
-                        <option value="delete_trial_device">删除设备</option>
-                        <option value="clear_trial_devices">清空试用设备</option>
-                        <option value="batch_generate">批量生成</option>
-                        <option value="delete">删除密钥</option>
-                    </select>
-                    <button class="btn btn-primary" onclick="loadLogs()">🔄 刷新</button>
-                    <button class="btn btn-secondary" onclick="exportLogs()">📊 导出CSV</button>
-                </div>
-                <div id="logsMeta" class="page-meta">尚未加载操作日志</div>
-                <div id="logsTable"></div>
-            </div>
-
-            <!-- 功能管理 -->
-            <div id="page-features" class="page">
-                <h2 style="margin-bottom: 20px;">⚙️ 功能管理</h2>
-                
-                <div class="form-section">
-                    <h3 style="margin-bottom: 20px;">全局功能开关</h3>
-                    <p style="color: #666; margin-bottom: 20px;">控制插件中哪些功能可用，禁用的功能将在插件中隐藏</p>
-                    
-                    <div class="feature-list">
-                        <div class="feature-item">
-                            <div class="feature-info">
-                                <span class="feature-icon">📤</span>
-                                <div>
-                                    <div class="feature-name">帖子导出</div>
-                                    <div class="feature-desc">导出指定日期范围内的帖子内容</div>
-                                </div>
-                            </div>
-                            <label class="switch">
-                                <input type="checkbox" id="feature-export" checked>
-                                <span class="slider"></span>
-                            </label>
-                        </div>
-
-                        <div class="feature-item">
-                            <div class="feature-info">
-                                <span class="feature-icon">📥</span>
-                                <div>
-                                    <div class="feature-name">文件下载</div>
-                                    <div class="feature-desc">按日期范围下载各类文件</div>
-                                </div>
-                            </div>
-                            <label class="switch">
-                                <input type="checkbox" id="feature-download" checked>
-                                <span class="slider"></span>
-                            </label>
-                        </div>
-
-                        <div class="feature-item">
-                            <div class="feature-info">
-                                <span class="feature-icon">🚀</span>
-                                <div>
-                                    <div class="feature-name">极速下载</div>
-                                    <div class="feature-desc">使用官方API极速下载文件</div>
-                                </div>
-                            </div>
-                            <label class="switch">
-                                <input type="checkbox" id="feature-turboDownload" checked>
-                                <span class="slider"></span>
-                            </label>
-                        </div>
-
-                        <div class="feature-item">
-                            <div class="feature-info">
-                                <span class="feature-icon">🔍</span>
-                                <div>
-                                    <div class="feature-name">关键词搜索</div>
-                                    <div class="feature-desc">搜索并导出包含关键词的帖子</div>
-                                </div>
-                            </div>
-                            <label class="switch">
-                                <input type="checkbox" id="feature-search" checked>
-                                <span class="slider"></span>
-                            </label>
-                        </div>
-
-                        <div class="feature-item">
-                            <div class="feature-info">
-                                <span class="feature-icon">📋</span>
-                                <div>
-                                    <div class="feature-name">导出搜索框</div>
-                                    <div class="feature-desc">导出知识星球搜索结果页面</div>
-                                </div>
-                            </div>
-                            <label class="switch">
-                                <input type="checkbox" id="feature-searchResult" checked>
-                                <span class="slider"></span>
-                            </label>
-                        </div>
-
-                        <div class="feature-item">
-                            <div class="feature-info">
-                                <span class="feature-icon">📚</span>
-                                <div>
-                                    <div class="feature-name">专栏导出</div>
-                                    <div class="feature-desc">导出星球专栏内容</div>
-                                </div>
-                            </div>
-                            <label class="switch">
-                                <input type="checkbox" id="feature-column" checked>
-                                <span class="slider"></span>
-                            </label>
-                        </div>
-
-                        <div class="feature-item">
-                            <div class="feature-info">
-                                <span class="feature-icon">⭐</span>
-                                <div>
-                                    <div class="feature-name">精华导出</div>
-                                    <div class="feature-desc">导出星球精华内容</div>
-                                </div>
-                            </div>
-                            <label class="switch">
-                                <input type="checkbox" id="feature-digest" checked>
-                                <span class="slider"></span>
-                            </label>
-                        </div>
-
-                        <div class="feature-item">
-                            <div class="feature-info">
-                                <span class="feature-icon">📦</span>
-                                <div>
-                                    <div class="feature-name">全量备份</div>
-                                    <div class="feature-desc">备份整个星球的所有内容</div>
-                                </div>
-                            </div>
-                            <label class="switch">
-                                <input type="checkbox" id="feature-backup" checked>
-                                <span class="slider"></span>
-                            </label>
-                        </div>
-                    </div>
-
-                    <div style="margin-top: 30px; display: flex; gap: 10px;">
-                        <button class="btn btn-primary" onclick="saveFeatureConfig()">💾 保存配置</button>
-                        <button class="btn btn-secondary" onclick="loadFeatureConfig()">🔄 刷新</button>
-                        <button class="btn btn-secondary" onclick="enableAllFeatures()">✅ 全部启用</button>
-                        <button class="btn btn-secondary" onclick="disableAllFeatures()">❌ 全部禁用</button>
-                    </div>
-
-                    <div id="featureConfigResult" style="margin-top: 15px;"></div>
-                </div>
-                
-                <div style="height: 30px; border-bottom: 1px solid #e5e7eb; margin: 30px 0;"></div>
-                
-                <div class="form-section">
-                    <h3 style="margin-bottom: 20px;">功能使用次数限制</h3>
-                    <p style="color: #666; margin-bottom: 20px;">设置每个功能的使用次数限制（0 表示无限制）</p>
-                    
-                    <button class="btn btn-primary" onclick="showFeatureLimitsConfig()">⚙️ 配置功能限制</button>
-                    <div class="actions" style="margin-top: 16px; margin-bottom: 0;">
-                        <input type="text" id="licenseLimitsTarget" class="form-control search-box" placeholder="输入要配置限制的密钥，或在密钥列表里点“限制”" aria-label="要配置限制的密钥">
-                        <button class="btn btn-secondary" onclick="showLicenseLimitsConfig()">🔑 配置单个密钥限制</button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 使用统计 -->
-            <div id="page-stats" class="page">
-                <h2 style="margin-bottom: 20px;">📈 功能使用统计</h2>
-                
-                <div class="actions">
-                    <select id="statsLicenseFilter" class="form-control" style="width: 420px; max-width: 100%; min-width: 320px;" onchange="loadUsageStats()">
-                        <option value="">全部密钥</option>
-                    </select>
-                    <select id="statsPeriodFilter" class="form-control" style="width: 150px;" onchange="loadUsageStats()">
-                        <option value="total">总计</option>
-                        <option value="monthly">按月</option>
-                        <option value="daily">按天</option>
-                    </select>
-                    <button class="btn btn-primary" onclick="loadUsageStats()">🔄 刷新</button>
-                </div>
-                
-                <div id="statsContent" style="margin-top: 20px;">
-                    <p style="text-align: center; color: #999; padding: 40px;">请选择密钥查看统计数据</p>
-                </div>
-            </div>
-
-            <!-- 测试工具 -->
-            <div id="page-test" class="page">
-                <h2 style="margin-bottom: 20px;">🧪 测试工具</h2>
-                
-                <!-- 测试激活 -->
-                <div class="form-section">
-                    <h3>1️⃣ 测试密钥激活</h3>
-                    <p style="color: #666; margin-bottom: 15px;">测试密钥是否可以激活，验证设备ID和IP绑定</p>
-                    <div class="form-group">
-                        <label for="testLicense">密钥</label>
-                        <input type="text" id="testLicense" class="form-control" placeholder="输入要测试的密钥">
+                        <label for="licenseCount">生成数量</label>
+                        <input type="number" id="licenseCount" class="form-control" value="10" min="1" max="1000"
+                            placeholder="输入生成数量（最多1000个）" aria-label="生成数量">
                     </div>
                     <div class="form-group">
-                        <label for="testDeviceId">设备ID</label>
-                        <input type="text" id="testDeviceId" class="form-control" placeholder="输入设备ID（留空则自动生成）">
-                    </div>
-                    <button class="btn btn-primary" onclick="testActivate()">🔍 测试激活</button>
-                    <div id="testActivateResult" style="margin-top: 15px;"></div>
-                </div>
-
-                <div style="height: 30px; border-bottom: 1px solid #e5e7eb; margin: 30px 0;"></div>
-
-                <!-- 测试任务权限 -->
-                <div class="form-section">
-                    <h3>2️⃣ 测试任务权限</h3>
-                    <p style="color: #666; margin-bottom: 15px;">测试设备是否有权限执行任务（会扣除试用次数）</p>
-                    <div class="form-group">
-                        <label for="testTaskDeviceId">设备ID</label>
-                        <input type="text" id="testTaskDeviceId" class="form-control" placeholder="输入设备ID">
-                    </div>
-                    <div class="form-group">
-                        <label for="testTaskFeature">测试功能</label>
-                        <select id="testTaskFeature" class="form-control">
-                            <option value="">通用校验（不测功能限制）</option>
-                            <option value="download">文件下载</option>
-                            <option value="export">帖子导出</option>
-                            <option value="turboDownload">极速下载</option>
-                            <option value="search">关键词搜索</option>
-                            <option value="searchResult">导出搜索框</option>
-                            <option value="column">专栏导出</option>
-                            <option value="digest">精华导出</option>
-                            <option value="backup">全量备份</option>
+                        <label for="expireDays">有效期（天）</label>
+                        <select id="expireDays" class="form-control" aria-label="密钥期限">
+                            <option value="0">永久</option>
+                            <option value="30">30天（1个月）</option>
+                            <option value="90">90天（3个月）</option>
+                            <option value="180">180天（半年）</option>
+                            <option value="365" selected>365天（1年）</option>
+                            <option value="730">730天（2年）</option>
+                            <option value="1825">1825天（5年）</option>
                         </select>
                     </div>
-                    <button class="btn btn-primary" onclick="testTaskPermission()">🔍 测试权限</button>
-                    <div id="testTaskResult" style="margin-top: 15px;"></div>
+                    <div class="form-group">
+                        <label for="popupMessage">弹窗信息（可选）</label>
+                        <textarea id="popupMessage" class="form-control" rows="3" placeholder="激活后显示的弹窗信息，留空则不显示"
+                            aria-label="激活后弹窗信息"></textarea>
+                    </div>
+                    <button id="batchGenerateBtn" class="btn btn-primary" onclick="batchGenerateLicenses()">🎲
+                        批量生成</button>
+
+                    <div id="generatedResult" class="alert alert-success" style="display:none;">
+                        <strong>✅ 成功生成 <span id="generatedCount"></span> 个密钥！</strong>
+                        <p><strong>有效期：</strong><span id="generatedDays"></span></p>
+                        <p><strong>说明：</strong><span id="generatedExpire"></span></p>
+                        <div style="margin-top: 15px;">
+                            <button class="btn btn-primary" onclick="exportLicenses('txt')">📄 导出为 TXT</button>
+                            <button class="btn btn-primary" onclick="exportLicenses('csv')">📊 导出为 CSV</button>
+                            <button class="btn btn-primary" onclick="copyAllLicenses()">📋 复制全部</button>
+                        </div>
+                        <div style="margin-top: 15px; max-height: 300px; overflow-y: auto; background: #f8f9fa; padding: 15px; border-radius: 8px; font-family: monospace; font-size: 12px;"
+                            id="licensesList"></div>
+                    </div>
                 </div>
 
-                <div style="height: 30px; border-bottom: 1px solid #e5e7eb; margin: 30px 0;"></div>
-
-                <!-- 测试试用功能 -->
-                <div class="form-section">
-                    <h3>3️⃣ 测试试用功能</h3>
-                    <p style="color: #666; margin-bottom: 15px;">测试试用密钥激活和IP检测</p>
-                    <div class="form-group">
-                        <label for="testTrialDeviceId">设备ID</label>
-                        <input type="text" id="testTrialDeviceId" class="form-control" placeholder="输入设备ID（留空则自动生成）">
+                <!-- 密钥列表 -->
+                <div id="page-licenses" class="page">
+                    <div class="actions page-toolbar">
+                        <input type="text" id="searchLicense" class="form-control search-box"
+                            placeholder="搜索密钥 / 设备ID / 弹窗信息..." aria-label="搜索密钥" oninput="filterLicenses()">
+                        <select id="filterStatus" class="form-control" style="width: 150px;" aria-label="按状态筛选密钥"
+                            onchange="filterLicenses()">
+                            <option value="all">全部状态</option>
+                            <option value="unused">未使用</option>
+                            <option value="activated">已激活</option>
+                            <option value="expired">已过期</option>
+                        </select>
+                        <select id="filterBinding" class="form-control" style="width: 150px;" aria-label="按绑定状态筛选密钥"
+                            onchange="filterLicenses()">
+                            <option value="all">全部设备</option>
+                            <option value="bound">已绑定设备</option>
+                            <option value="unbound">未绑定设备</option>
+                        </select>
+                        <select id="filterConfigState" class="form-control" style="width: 150px;" aria-label="按配置状态筛选密钥"
+                            onchange="filterLicenses()">
+                            <option value="all">全部配置</option>
+                            <option value="configured">已配弹窗</option>
+                            <option value="plain">未配弹窗</option>
+                        </select>
+                        <select id="filterDays" class="form-control" style="width: 150px;" aria-label="按期限筛选密钥"
+                            onchange="filterLicenses()">
+                            <option value="all">全部期限</option>
+                            <option value="0">永久</option>
+                            <option value="30">30天</option>
+                            <option value="90">90天</option>
+                            <option value="180">180天</option>
+                            <option value="365">365天</option>
+                            <option value="730">730天</option>
+                            <option value="1825">1825天</option>
+                        </select>
+                        <button class="btn btn-primary" onclick="loadLicenses()">🔄 刷新</button>
+                        <button id="copySelectedLicensesBtn" class="btn btn-secondary" onclick="copySelectedLicenses()"
+                            disabled>📋 复制选中</button>
+                        <button id="deleteSelectedLicensesBtn" class="btn btn-danger" onclick="deleteSelectedLicenses()"
+                            disabled>🗑️ 删除选中</button>
+                        <button class="btn btn-primary" onclick="exportAllLicenses('csv')">📊 导出CSV</button>
+                        <button class="btn btn-primary" onclick="exportAllLicenses('txt')">📄 导出TXT</button>
                     </div>
-                    <button class="btn btn-primary" onclick="testTrial()">🔍 测试试用</button>
-                    <div id="testTrialResult" style="margin-top: 15px;"></div>
+                    <div id="licensesMeta" class="page-meta">尚未加载密钥数据</div>
+                    <div id="licensesTable"></div>
                 </div>
 
-                <div style="height: 30px; border-bottom: 1px solid #e5e7eb; margin: 30px 0;"></div>
+                <!-- 系统配置 -->
+                <div id="page-config" class="page">
+                    <h2 style="margin-bottom: 20px;">⚙️ 系统配置</h2>
 
-                <!-- 查询密钥信息 -->
-                <div class="form-section">
-                    <h3>4️⃣ 查询密钥详情</h3>
-                    <p style="color: #666; margin-bottom: 15px;">查看密钥的详细信息（不会修改数据）</p>
-                    <div class="form-group">
-                        <label for="queryLicense">密钥</label>
-                        <input type="text" id="queryLicense" class="form-control" placeholder="输入要查询的密钥">
+                    <div class="form-section">
+                        <h3>购买链接</h3>
+                        <div class="form-group">
+                            <label for="globalPurchaseUrl">购买链接</label>
+                            <input type="url" id="globalPurchaseUrl" class="form-control"
+                                placeholder="https://example.com/buy" aria-label="购买链接">
+                            <small style="color: #666; font-size: 12px;">此链接将在所有"购买"、"升级"按钮中使用</small>
+                        </div>
                     </div>
-                    <button class="btn btn-primary" onclick="queryLicenseInfo()">🔍 查询</button>
-                    <div id="queryLicenseResult" style="margin-top: 15px;"></div>
+
+                    <div class="form-section">
+                        <h3>全局弹窗配置</h3>
+                        <div class="form-group">
+                            <label for="globalPopupMessage">全局弹窗信息</label>
+                            <textarea id="globalPopupMessage" class="form-control" rows="4"
+                                placeholder="输入要向所有用户显示的弹窗信息（留空则不显示）" aria-label="全局弹窗信息"></textarea>
+                            <small style="color: #666; font-size: 12px;">此弹窗将在所有用户打开插件时自动显示（每次修改后会重新显示一次）</small>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <h3>试用次数配置</h3>
+                        <div class="form-group">
+                            <label for="defaultTrialTasks">默认试用次数</label>
+                            <input type="number" id="defaultTrialTasks" class="form-control" value="10" min="1"
+                                max="1000" placeholder="10" aria-label="默认试用次数">
+                            <small style="color: #666; font-size: 12px;">新用户激活试用时的默认次数（建议 5-20 次）</small>
+                        </div>
+                    </div>
+
+                    <button id="saveGlobalConfigBtn" class="btn btn-primary" onclick="saveGlobalConfig()">💾
+                        保存配置</button>
+                    <button class="btn btn-secondary" onclick="loadGlobalConfig()">🔄 重新加载</button>
                 </div>
 
-                <div style="height: 30px; border-bottom: 1px solid #e5e7eb; margin: 30px 0;"></div>
+                <!-- 试用设备 -->
+                <div id="page-trial" class="page">
+                    <div class="actions page-toolbar">
+                        <input type="text" id="searchTrialDevice" class="form-control search-box"
+                            placeholder="搜索设备ID / IP / 时间..." aria-label="搜索试用设备" oninput="filterTrialDevices()">
+                        <button class="btn btn-primary" onclick="loadTrialDevices()">🔄 刷新</button>
+                        <button class="btn btn-secondary" onclick="exportTrialDevices()">📊 导出CSV</button>
+                        <button class="btn btn-danger" onclick="clearTrialDevices(this)">🗑️ 清空全部试用设备</button>
+                    </div>
+                    <div id="trialMeta" class="page-meta">尚未加载试用设备数据</div>
+                    <div id="trialTable"></div>
+                </div>
 
-                <!-- 测试密钥过期后试用 -->
-                <div class="form-section">
-                    <h3>5️⃣ 测试密钥过期后试用</h3>
-                    <p style="color: #666; margin-bottom: 15px;">将密钥设置为过期状态，然后测试是否能继续试用</p>
-                    <div class="form-group">
-                        <label for="expireTestLicense">密钥</label>
-                        <input type="text" id="expireTestLicense" class="form-control" placeholder="输入要测试的密钥">
+                <!-- 操作日志 -->
+                <div id="page-logs" class="page">
+                    <div class="actions page-toolbar">
+                        <input type="text" id="searchLogKeyword" class="form-control search-box"
+                            placeholder="搜索密钥 / 设备 / IP / 动作..." aria-label="搜索操作日志" oninput="filterLogs()">
+                        <select id="filterLogAction" class="form-control" style="width: 150px;" aria-label="按动作筛选日志"
+                            onchange="filterLogs()">
+                            <option value="all">全部操作</option>
+                            <option value="activate">密钥激活</option>
+                            <option value="trial_activate">试用激活</option>
+                            <option value="trial_task">试用任务</option>
+                            <option value="reset_trial_tasks">重置试用</option>
+                            <option value="delete_trial_device">删除设备</option>
+                            <option value="clear_trial_devices">清空试用设备</option>
+                            <option value="batch_generate">批量生成</option>
+                            <option value="delete">删除密钥</option>
+                        </select>
+                        <button class="btn btn-primary" onclick="loadLogs()">🔄 刷新</button>
+                        <button class="btn btn-secondary" onclick="exportLogs()">📊 导出CSV</button>
                     </div>
-                    <div style="display: flex; gap: 10px; margin-top: 15px;">
-                        <button class="btn btn-danger" onclick="setLicenseExpired()">⚠️ 设置为过期</button>
-                        <button class="btn btn-primary" onclick="testExpiredThenTrial()">🔍 测试过期后试用</button>
+                    <div id="logsMeta" class="page-meta">尚未加载操作日志</div>
+                    <div id="logsTable"></div>
+                </div>
+
+                <!-- 功能管理 -->
+                <div id="page-features" class="page">
+                    <h2 style="margin-bottom: 20px;">⚙️ 功能管理</h2>
+
+                    <div class="form-section">
+                        <h3 style="margin-bottom: 20px;">全局功能开关</h3>
+                        <p style="color: #666; margin-bottom: 20px;">控制插件中哪些功能可用，禁用的功能将在插件中隐藏</p>
+
+                        <div class="feature-list">
+                            <div class="feature-item">
+                                <div class="feature-info">
+                                    <span class="feature-icon">📤</span>
+                                    <div>
+                                        <div class="feature-name">帖子导出</div>
+                                        <div class="feature-desc">导出指定日期范围内的帖子内容</div>
+                                    </div>
+                                </div>
+                                <label class="switch">
+                                    <input type="checkbox" id="feature-export" checked>
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+
+                            <div class="feature-item">
+                                <div class="feature-info">
+                                    <span class="feature-icon">📥</span>
+                                    <div>
+                                        <div class="feature-name">文件下载</div>
+                                        <div class="feature-desc">按日期范围下载各类文件</div>
+                                    </div>
+                                </div>
+                                <label class="switch">
+                                    <input type="checkbox" id="feature-download" checked>
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+
+                            <div class="feature-item">
+                                <div class="feature-info">
+                                    <span class="feature-icon">🚀</span>
+                                    <div>
+                                        <div class="feature-name">极速下载</div>
+                                        <div class="feature-desc">使用官方API极速下载文件</div>
+                                    </div>
+                                </div>
+                                <label class="switch">
+                                    <input type="checkbox" id="feature-turboDownload" checked>
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+
+                            <div class="feature-item">
+                                <div class="feature-info">
+                                    <span class="feature-icon">🔍</span>
+                                    <div>
+                                        <div class="feature-name">关键词搜索</div>
+                                        <div class="feature-desc">搜索并导出包含关键词的帖子</div>
+                                    </div>
+                                </div>
+                                <label class="switch">
+                                    <input type="checkbox" id="feature-search" checked>
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+
+                            <div class="feature-item">
+                                <div class="feature-info">
+                                    <span class="feature-icon">📋</span>
+                                    <div>
+                                        <div class="feature-name">导出搜索框</div>
+                                        <div class="feature-desc">导出知识星球搜索结果页面</div>
+                                    </div>
+                                </div>
+                                <label class="switch">
+                                    <input type="checkbox" id="feature-searchResult" checked>
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+
+                            <div class="feature-item">
+                                <div class="feature-info">
+                                    <span class="feature-icon">📚</span>
+                                    <div>
+                                        <div class="feature-name">专栏导出</div>
+                                        <div class="feature-desc">导出星球专栏内容</div>
+                                    </div>
+                                </div>
+                                <label class="switch">
+                                    <input type="checkbox" id="feature-column" checked>
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+
+                            <div class="feature-item">
+                                <div class="feature-info">
+                                    <span class="feature-icon">⭐</span>
+                                    <div>
+                                        <div class="feature-name">精华导出</div>
+                                        <div class="feature-desc">导出星球精华内容</div>
+                                    </div>
+                                </div>
+                                <label class="switch">
+                                    <input type="checkbox" id="feature-digest" checked>
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+
+                            <div class="feature-item">
+                                <div class="feature-info">
+                                    <span class="feature-icon">📦</span>
+                                    <div>
+                                        <div class="feature-name">全量备份</div>
+                                        <div class="feature-desc">备份整个星球的所有内容</div>
+                                    </div>
+                                </div>
+                                <label class="switch">
+                                    <input type="checkbox" id="feature-backup" checked>
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div style="margin-top: 30px; display: flex; gap: 10px;">
+                            <button class="btn btn-primary" onclick="saveFeatureConfig()">💾 保存配置</button>
+                            <button class="btn btn-secondary" onclick="loadFeatureConfig()">🔄 刷新</button>
+                            <button class="btn btn-secondary" onclick="enableAllFeatures()">✅ 全部启用</button>
+                            <button class="btn btn-secondary" onclick="disableAllFeatures()">❌ 全部禁用</button>
+                        </div>
+
+                        <div id="featureConfigResult" style="margin-top: 15px;"></div>
                     </div>
-                    <div id="expireTestResult" style="margin-top: 15px;"></div>
+
+                    <div style="height: 30px; border-bottom: 1px solid #e5e7eb; margin: 30px 0;"></div>
+
+                    <div class="form-section">
+                        <h3 style="margin-bottom: 20px;">功能使用次数限制</h3>
+                        <p style="color: #666; margin-bottom: 20px;">设置每个功能的使用次数限制（0 表示无限制）</p>
+
+                        <button class="btn btn-primary" onclick="showFeatureLimitsConfig()">⚙️ 配置功能限制</button>
+                        <div class="actions" style="margin-top: 16px; margin-bottom: 0;">
+                            <input type="text" id="licenseLimitsTarget" class="form-control search-box"
+                                placeholder="输入要配置限制的密钥，或在密钥列表里点“限制”" aria-label="要配置限制的密钥">
+                            <button class="btn btn-secondary" onclick="showLicenseLimitsConfig()">🔑 配置单个密钥限制</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 使用统计 -->
+                <div id="page-stats" class="page">
+                    <h2 style="margin-bottom: 20px;">📈 功能使用统计</h2>
+
+                    <div class="actions">
+                        <select id="statsLicenseFilter" class="form-control"
+                            style="width: 420px; max-width: 100%; min-width: 320px;" onchange="loadUsageStats()">
+                            <option value="">全部密钥</option>
+                        </select>
+                        <select id="statsPeriodFilter" class="form-control" style="width: 150px;"
+                            onchange="loadUsageStats()">
+                            <option value="total">总计</option>
+                            <option value="monthly">按月</option>
+                            <option value="daily">按天</option>
+                        </select>
+                        <button class="btn btn-primary" onclick="loadUsageStats()">🔄 刷新</button>
+                    </div>
+
+                    <div id="statsContent" style="margin-top: 20px;">
+                        <p style="text-align: center; color: #999; padding: 40px;">请选择密钥查看统计数据</p>
+                    </div>
+                </div>
+
+                <!-- 测试工具 -->
+                <div id="page-test" class="page">
+                    <h2 style="margin-bottom: 20px;">🧪 测试工具</h2>
+
+                    <!-- 测试激活 -->
+                    <div class="form-section">
+                        <h3>1️⃣ 测试密钥激活</h3>
+                        <p style="color: #666; margin-bottom: 15px;">测试密钥是否可以激活，验证设备ID和IP绑定</p>
+                        <div class="form-group">
+                            <label for="testLicense">密钥</label>
+                            <input type="text" id="testLicense" class="form-control" placeholder="输入要测试的密钥">
+                        </div>
+                        <div class="form-group">
+                            <label for="testDeviceId">设备ID</label>
+                            <input type="text" id="testDeviceId" class="form-control" placeholder="输入设备ID（留空则自动生成）">
+                        </div>
+                        <button class="btn btn-primary" onclick="testActivate()">🔍 测试激活</button>
+                        <div id="testActivateResult" style="margin-top: 15px;"></div>
+                    </div>
+
+                    <div style="height: 30px; border-bottom: 1px solid #e5e7eb; margin: 30px 0;"></div>
+
+                    <!-- 测试任务权限 -->
+                    <div class="form-section">
+                        <h3>2️⃣ 测试任务权限</h3>
+                        <p style="color: #666; margin-bottom: 15px;">测试设备是否有权限执行任务（会扣除试用次数）</p>
+                        <div class="form-group">
+                            <label for="testTaskDeviceId">设备ID</label>
+                            <input type="text" id="testTaskDeviceId" class="form-control" placeholder="输入设备ID">
+                        </div>
+                        <div class="form-group">
+                            <label for="testTaskFeature">测试功能</label>
+                            <select id="testTaskFeature" class="form-control">
+                                <option value="">通用校验（不测功能限制）</option>
+                                <option value="download">文件下载</option>
+                                <option value="export">帖子导出</option>
+                                <option value="turboDownload">极速下载</option>
+                                <option value="search">关键词搜索</option>
+                                <option value="searchResult">导出搜索框</option>
+                                <option value="column">专栏导出</option>
+                                <option value="digest">精华导出</option>
+                                <option value="backup">全量备份</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-primary" onclick="testTaskPermission()">🔍 测试权限</button>
+                        <div id="testTaskResult" style="margin-top: 15px;"></div>
+                    </div>
+
+                    <div style="height: 30px; border-bottom: 1px solid #e5e7eb; margin: 30px 0;"></div>
+
+                    <!-- 测试试用功能 -->
+                    <div class="form-section">
+                        <h3>3️⃣ 测试试用功能</h3>
+                        <p style="color: #666; margin-bottom: 15px;">测试试用密钥激活和IP检测</p>
+                        <div class="form-group">
+                            <label for="testTrialDeviceId">设备ID</label>
+                            <input type="text" id="testTrialDeviceId" class="form-control"
+                                placeholder="输入设备ID（留空则自动生成）">
+                        </div>
+                        <button class="btn btn-primary" onclick="testTrial()">🔍 测试试用</button>
+                        <div id="testTrialResult" style="margin-top: 15px;"></div>
+                    </div>
+
+                    <div style="height: 30px; border-bottom: 1px solid #e5e7eb; margin: 30px 0;"></div>
+
+                    <!-- 查询密钥信息 -->
+                    <div class="form-section">
+                        <h3>4️⃣ 查询密钥详情</h3>
+                        <p style="color: #666; margin-bottom: 15px;">查看密钥的详细信息（不会修改数据）</p>
+                        <div class="form-group">
+                            <label for="queryLicense">密钥</label>
+                            <input type="text" id="queryLicense" class="form-control" placeholder="输入要查询的密钥">
+                        </div>
+                        <button class="btn btn-primary" onclick="queryLicenseInfo()">🔍 查询</button>
+                        <div id="queryLicenseResult" style="margin-top: 15px;"></div>
+                    </div>
+
+                    <div style="height: 30px; border-bottom: 1px solid #e5e7eb; margin: 30px 0;"></div>
+
+                    <!-- 测试密钥过期后试用 -->
+                    <div class="form-section">
+                        <h3>5️⃣ 测试密钥过期后试用</h3>
+                        <p style="color: #666; margin-bottom: 15px;">将密钥设置为过期状态，然后测试是否能继续试用</p>
+                        <div class="form-group">
+                            <label for="expireTestLicense">密钥</label>
+                            <input type="text" id="expireTestLicense" class="form-control" placeholder="输入要测试的密钥">
+                        </div>
+                        <div style="display: flex; gap: 10px; margin-top: 15px;">
+                            <button class="btn btn-danger" onclick="setLicenseExpired()">⚠️ 设置为过期</button>
+                            <button class="btn btn-primary" onclick="testExpiredThenTrial()">🔍 测试过期后试用</button>
+                        </div>
+                        <div id="expireTestResult" style="margin-top: 15px;"></div>
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
     </div>
     </div>
 
     <div id="toastContainer" class="toast-container"></div>
     <script src="./admin.js"></script>
 </body>
+
 </html>
