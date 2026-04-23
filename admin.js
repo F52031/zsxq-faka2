@@ -1502,7 +1502,12 @@
 
         async function saveGlobalLimits() {
             const features = ['export', 'download', 'turboDownload', 'search', 'searchResult', 'column', 'digest', 'backup'];
-            const config = { global: {}, licenses: {} };
+            const currentResult = await apiRequest('getFeatureLimitsConfig');
+            const config = currentResult.success
+                ? (currentResult.data || { global: {}, licenses: {} })
+                : { global: {}, licenses: {} };
+            config.global = config.global || {};
+            config.licenses = config.licenses || {};
 
             features.forEach(feature => {
                 const enabled = document.getElementById(`limit-${feature}-enabled`).checked;
@@ -1514,6 +1519,7 @@
             const result = await apiRequest('updateFeatureLimitsConfig', { config });
 
             if (result.success) {
+                featureLimitsConfigCache = config;
                 showToast('全局功能限制配置已保存');
                 closeLimitsModal();
             } else {
@@ -1565,6 +1571,7 @@
                             ${createLicenseFeatureLimitRow('column', '📚 专栏导出', globalConfig.column, licenseConfig.column)}
                             ${createLicenseFeatureLimitRow('digest', '⭐ 精华导出', globalConfig.digest, licenseConfig.digest)}
                             ${createLicenseFeatureLimitRow('backup', '📦 全量备份', globalConfig.backup, licenseConfig.backup)}
+                            ${createContentProtectionOverrideRow('lic-content-protection-allow-bypass', licenseConfig.contentProtection?.allowBypass === true)}
                         </div>
 
                         <div style="margin-top: 30px; display: flex; gap: 10px; justify-content: flex-end;">
@@ -1614,6 +1621,10 @@
                     config.licenses[normalizedLicense][feature] = { enabled, limit, period };
                 }
             });
+
+            if (document.getElementById('lic-content-protection-allow-bypass')?.checked) {
+                config.licenses[normalizedLicense].contentProtection = { allowBypass: true };
+            }
 
             if (Object.keys(config.licenses[normalizedLicense]).length === 0) {
                 delete config.licenses[normalizedLicense];
@@ -1924,6 +1935,7 @@
             digest: '精华导出',
             backup: '全量备份'
         };
+        const contentProtectionBypassLabel = '内容保护放开';
         const logActionLabelMap = {
             activate: '密钥激活',
             check_task: '任务校验',
@@ -1953,7 +1965,8 @@
 
         function getLicenseLimitSummary(license) {
             const overrides = featureLimitsConfigCache?.licenses?.[license] || {};
-            const featureEntries = Object.entries(overrides);
+            const contentProtectionBypass = overrides?.contentProtection?.allowBypass === true;
+            const featureEntries = Object.entries(overrides).filter(([feature]) => feature !== 'contentProtection');
             const disabledFeatures = [];
             const limitedFeatures = [];
 
@@ -1975,18 +1988,20 @@
             });
 
             return {
-                hasOverride: featureEntries.length > 0,
+                hasOverride: featureEntries.length > 0 || contentProtectionBypass,
                 disabledCount: disabledFeatures.length,
                 limitedCount: limitedFeatures.length,
-                searchText: [...disabledFeatures, ...limitedFeatures].join(' '),
+                searchText: [...disabledFeatures, ...limitedFeatures, contentProtectionBypass ? contentProtectionBypassLabel : ''].join(' '),
                 chips: [
+                    contentProtectionBypass ? '<span class="badge badge-success">内容保护放开</span>' : '',
                     disabledFeatures.length ? `<span class="badge badge-danger">禁用 ${disabledFeatures.length}</span>` : '',
                     limitedFeatures.length ? `<span class="badge badge-warning">限额 ${limitedFeatures.length}</span>` : '',
-                    (!disabledFeatures.length && !limitedFeatures.length && featureEntries.length)
+                    (!contentProtectionBypass && !disabledFeatures.length && !limitedFeatures.length && featureEntries.length)
                         ? '<span class="badge badge-primary">已覆盖</span>'
                         : ''
                 ].filter(Boolean).join(' '),
                 tooltip: [
+                    contentProtectionBypass ? '内容保护：已放开' : '',
                     disabledFeatures.length ? `禁用：${disabledFeatures.join('、')}` : '',
                     limitedFeatures.length ? `限额：${limitedFeatures.join('；')}` : ''
                 ].filter(Boolean).join('\n')
@@ -2750,6 +2765,9 @@
                     overrides[feature] = { enabled, limit, period };
                 }
             });
+            if (document.getElementById(`${prefix}-content-protection-allow-bypass`)?.checked) {
+                overrides.contentProtection = { allowBypass: true };
+            }
             return overrides;
         }
 
@@ -2794,6 +2812,7 @@
                             ${createLicenseFeatureLimitRow('column', '专栏导出', globalConfig.column, {})}
                             ${createLicenseFeatureLimitRow('digest', '精华导出', globalConfig.digest, {})}
                             ${createLicenseFeatureLimitRow('backup', '全量备份', globalConfig.backup, {})}
+                            ${createContentProtectionOverrideRow('lic-limit-content-protection-allow-bypass', false, '开启后，会为当前选中的所有密钥统一放开内容保护限制。未勾选则不新增该覆盖。')}
                         </div>
                         <div style="margin-top: 24px; display: flex; justify-content: flex-end; gap: 10px;">
                             <button type="button" class="btn btn-secondary" onclick="closeBatchLicenseLimitsModal()">取消</button>
@@ -2944,6 +2963,21 @@
                             ${item.meta ? `<small class="summary-meta">${escapeHtml(item.meta)}</small>` : ''}
                         </div>
                     `).join('')}
+                </div>
+            `;
+        }
+
+        function createContentProtectionOverrideRow(inputId, checked = false, description = '开启后，该密钥在遇到“内容保护”星球时，仍可继续使用导出类功能。') {
+            return `
+                <div style="border: 1px solid #fcd34d; border-radius: 10px; padding: 16px; background: linear-gradient(135deg, #fffdf5 0%, #fff7e6 100%);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <strong style="font-size: 15px;">🔓 放开内容保护限制</strong>
+                        <label class="switch">
+                            <input type="checkbox" id="${inputId}" ${checked ? 'checked' : ''}>
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <div style="font-size: 13px; color: #92400e; line-height: 1.7;">${description}</div>
                 </div>
             `;
         }
