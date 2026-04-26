@@ -1,5 +1,9 @@
         // 管理密码
-        const API_URL = 'https://1340181402-6rjxdina8v.ap-guangzhou.tencentscf.com';
+        const DEFAULT_API_URL = '__LICENSE_API_URL__';
+        const BUILT_IN_API_URL = 'https://1340181402-6rjxdina8v.ap-guangzhou.tencentscf.com';
+        const RAW_API_URL = String(window.ZSXQ_LICENSE_API_URL || DEFAULT_API_URL).trim();
+        const RESOLVED_API_URL = RAW_API_URL && RAW_API_URL !== DEFAULT_API_URL ? RAW_API_URL : BUILT_IN_API_URL;
+        const API_URL = RESOLVED_API_URL.replace(/\/$/, '');
         const SESSION_KEY = 'admin_session';
         
         // 页面加载时检查登录状态
@@ -44,6 +48,10 @@
         
 
         async function apiRawRequest(action, data = {}) {
+            if (!API_URL) {
+                throw new Error('管理台 API 地址无效，请检查 admin.js 中的 BUILT_IN_API_URL 或 admin-config.js 中的 ZSXQ_LICENSE_API_URL');
+            }
+
             const response = await fetch(API_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -820,7 +828,7 @@
                 return;
             }
             
-            const config = result.data.global;
+            const config = normalizeAdminFeatureLimitsConfig(result.data).global;
             
             // 创建弹窗HTML
             const modalHtml = `
@@ -952,6 +960,75 @@
         const devicePageSize = 20;
         let allLogsRaw = [];
         let currentDefaultTrialTasks = 10;
+        const ADMIN_FEATURE_LIMIT_KEYS = ['export', 'download', 'turboDownload', 'search', 'searchResult', 'column', 'digest', 'backup'];
+        const ADMIN_FEATURE_LIMIT_PERIODS = new Set(['unlimited', 'daily', 'weekly', 'monthly']);
+
+        function getDefaultAdminFeatureLimitsConfig() {
+            const global = {};
+            ADMIN_FEATURE_LIMIT_KEYS.forEach((feature) => {
+                global[feature] = { enabled: true, limit: 0, period: 'unlimited' };
+            });
+            return { global, licenses: {} };
+        }
+
+        function normalizeAdminFeatureLimitEntry(config, keepDefault = false) {
+            if (!config || typeof config !== 'object' || Array.isArray(config)) {
+                return keepDefault ? { enabled: true, limit: 0, period: 'unlimited' } : null;
+            }
+
+            const enabled = config.enabled !== false;
+            const limit = Math.max(0, parseInt(config.limit, 10) || 0);
+            const period = ADMIN_FEATURE_LIMIT_PERIODS.has(String(config.period || 'unlimited'))
+                ? String(config.period || 'unlimited')
+                : 'unlimited';
+
+            if (!keepDefault && enabled && limit === 0 && period === 'unlimited') {
+                return null;
+            }
+
+            return { enabled, limit, period };
+        }
+
+        function normalizeAdminFeatureLimitsConfig(config = {}) {
+            const normalized = getDefaultAdminFeatureLimitsConfig();
+            const source = config && typeof config === 'object' && !Array.isArray(config) ? config : {};
+            const sourceGlobal = source.global && typeof source.global === 'object' && !Array.isArray(source.global)
+                ? source.global
+                : source;
+
+            ADMIN_FEATURE_LIMIT_KEYS.forEach((feature) => {
+                normalized.global[feature] = normalizeAdminFeatureLimitEntry(sourceGlobal[feature], true);
+            });
+
+            const sourceLicenses = source.licenses && typeof source.licenses === 'object' && !Array.isArray(source.licenses)
+                ? source.licenses
+                : {};
+
+            Object.entries(sourceLicenses).forEach(([license, featureConfig]) => {
+                const normalizedLicense = normalizeLicenseInput(license);
+                if (!normalizedLicense || !featureConfig || typeof featureConfig !== 'object' || Array.isArray(featureConfig)) {
+                    return;
+                }
+
+                const override = {};
+                ADMIN_FEATURE_LIMIT_KEYS.forEach((feature) => {
+                    const entry = normalizeAdminFeatureLimitEntry(featureConfig[feature], false);
+                    if (entry) {
+                        override[feature] = entry;
+                    }
+                });
+
+                if (featureConfig.contentProtection?.allowBypass === true) {
+                    override.contentProtection = { allowBypass: true };
+                }
+
+                if (Object.keys(override).length > 0) {
+                    normalized.licenses[normalizedLicense] = override;
+                }
+            });
+
+            return normalized;
+        }
 
         function getConfiguredDefaultTrialTasks() {
             return currentDefaultTrialTasks;
@@ -1161,7 +1238,7 @@
                     <td>${escapeHtml(device.sourceLabel)}</td>
                     <td>${device.licenseCount > 0 ? `<span class="badge badge-primary">${escapeHtml(device.licenseCount)} 个</span><div style="margin-top: 4px; font-size: 11px;">${escapeHtml(device.licensesPreview)}</div>` : '-'}</td>
                     <td>${device.hasTrialRecord ? `<span class="badge ${device.trialRemainingTasks > 0 ? 'badge-warning' : 'badge-danger'}">${escapeHtml(device.trialRemainingTasks)} 次</span>` : '-'}</td>
-                    <td>${device.restricted ? `<span class="badge badge-danger">已限制</span><div style="margin-top: 4px; font-size: 11px;">${escapeHtml(device.restrictionReason || device.restrictionNote || '-')}</div>` : '<span class="badge badge-success">正常</span>'}</td>
+                    <td>${device.restricted ? `<span class="badge badge-danger">已限制</span><div style="margin-top: 4px; font-size: 11px;">${escapeHtml(device.restrictionReason || device.restrictionNote || '-')}</div><div style="margin-top: 4px; font-size: 11px; color: #666;">命中：${escapeHtml(device.restrictionMatchScope || '设备ID')}</div>` : '<span class="badge badge-success">正常</span>'}</td>
                     <td>${escapeHtml(device.lastSeen || '-')}</td>
                     <td>${escapeHtml(device.lastIP || '-')}</td>
                     <td>${actions.join('<br>') || '-'}</td>
@@ -1504,8 +1581,8 @@
             const features = ['export', 'download', 'turboDownload', 'search', 'searchResult', 'column', 'digest', 'backup'];
             const currentResult = await apiRequest('getFeatureLimitsConfig');
             const config = currentResult.success
-                ? (currentResult.data || { global: {}, licenses: {} })
-                : { global: {}, licenses: {} };
+                ? normalizeAdminFeatureLimitsConfig(currentResult.data)
+                : getDefaultAdminFeatureLimitsConfig();
             config.global = config.global || {};
             config.licenses = config.licenses || {};
 
@@ -1552,8 +1629,9 @@
                 return;
             }
 
-            const globalConfig = result.data.global;
-            const licenseConfig = result.data.licenses[normalizedLicense] || {};
+            const limitsConfig = normalizeAdminFeatureLimitsConfig(result.data);
+            const globalConfig = limitsConfig.global;
+            const licenseConfig = limitsConfig.licenses[normalizedLicense] || {};
 
             const modalHtml = `
                 <div id="licenseLimitsModal" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 10000;">
@@ -1609,7 +1687,7 @@
                 return;
             }
 
-            const config = currentResult.data;
+            const config = normalizeAdminFeatureLimitsConfig(currentResult.data);
             config.licenses[normalizedLicense] = {};
 
             features.forEach(feature => {
@@ -1689,7 +1767,7 @@
                 }
             } catch (error) {
                 console.error('登录失败:', error);
-                setLoginError('登录失败，请检查网络后重试');
+                setLoginError(error.message || '登录失败，请检查网络后重试');
             } finally {
                 setButtonBusy(submitButton, false);
             }
@@ -2795,7 +2873,7 @@
             closeLicenseLimitsModal();
             closeBatchLicenseLimitsModal();
 
-            const globalConfig = result.data?.global || {};
+            const globalConfig = normalizeAdminFeatureLimitsConfig(result.data).global;
             const modalHtml = `
                 <div id="batchLicenseLimitsModal" style="position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); display: flex; align-items: center; justify-content: center; z-index: 10000;">
                     <div style="background: white; border-radius: 16px; padding: 28px; width: min(860px, 94vw); max-height: 90vh; overflow-y: auto; box-shadow: 0 24px 80px rgba(15, 23, 42, 0.28);">
@@ -2846,7 +2924,7 @@
                     return;
                 }
 
-                const config = currentResult.data || { global: {}, licenses: {} };
+                const config = normalizeAdminFeatureLimitsConfig(currentResult.data);
                 config.licenses = config.licenses || {};
                 const overrides = buildFeatureLimitOverridesFromInputs('lic-limit');
 
@@ -2895,7 +2973,7 @@
                     return;
                 }
 
-                const config = currentResult.data || { global: {}, licenses: {} };
+                const config = normalizeAdminFeatureLimitsConfig(currentResult.data);
                 config.licenses = config.licenses || {};
                 licenses.forEach((license) => {
                     delete config.licenses[license];
@@ -3208,8 +3286,8 @@
             }
 
             featureLimitsConfigCache = limitsResult.success
-                ? (limitsResult.data || { global: {}, licenses: {} })
-                : { global: {}, licenses: {} };
+                ? normalizeAdminFeatureLimitsConfig(limitsResult.data)
+                : getDefaultAdminFeatureLimitsConfig();
             allLicensesCache = sortLicensesByCreatedDesc(result.data.licenses || []);
             syncSelectedLicenses();
             filterLicenses();
