@@ -279,6 +279,7 @@
 
         // 批量生成密钥
         let generatedLicensesCache = [];
+        let generatedContentProtectionBypassCache = false;
         
         
 
@@ -1807,6 +1808,7 @@
             const count = parseInt(document.getElementById('licenseCount').value, 10);
             const days = parseInt(document.getElementById('expireDays').value, 10);
             const popupMessage = document.getElementById('popupMessage').value.trim();
+            const allowContentProtectionBypass = document.getElementById('allowContentProtectionBypass')?.checked === true;
 
             if (!count || count <= 0) {
                 showToast('请输入有效的生成数量', 'error');
@@ -1824,7 +1826,8 @@
                 const result = await apiRequest('batchGenerateLicenses', {
                     count,
                     days,
-                    popupMessage
+                    popupMessage,
+                    allowContentProtectionBypass
                 });
 
                 if (!result.success) {
@@ -1833,11 +1836,14 @@
                 }
 
                 generatedLicensesCache = result.data.licenses || [];
+                generatedContentProtectionBypassCache = result.data.contentProtectionBypass === true;
 
                 document.getElementById('generatedCount').textContent = result.data.count;
                 document.getElementById('generatedDays').textContent = result.data.isPermanent ? '永久' : result.data.days + '天';
                 document.getElementById('generatedExpire').textContent =
                     result.data.isPermanent ? '永久有效' : '激活后' + result.data.days + '天';
+                document.getElementById('generatedContentProtection').textContent =
+                    generatedContentProtectionBypassCache ? '已放开内容保护限制' : '默认限制';
                 document.getElementById('licensesList').innerHTML = generatedLicensesCache
                     .map((lic, index) => `${index + 1}. ${escapeHtml(lic)}`)
                     .join('<br>');
@@ -1872,9 +1878,10 @@
             } else {
                 const daysText = isPermanent ? '永久' : `${days}天`;
                 const expireNote = isPermanent ? '永久有效' : `激活后${days}天`;
-                content = '密钥,有效期,说明,状态\n';
+                const contentProtectionNote = generatedContentProtectionBypassCache ? '内容保护放开' : '默认限制';
+                content = '密钥,有效期,说明,内容保护,状态\n';
                 generatedLicensesCache.forEach(lic => {
-                    content += `${lic},${daysText},${expireNote},未使用\n`;
+                    content += `${lic},${daysText},${expireNote},${contentProtectionNote},未使用\n`;
                 });
                 filename = isPermanent ? `licenses-permanent-${timestamp}.csv` : `licenses-${days}days-${timestamp}.csv`;
                 mimeType = 'text/csv';
